@@ -24,12 +24,11 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy source code from app directory
 COPY app/ .
 
-# Set environment variables for build
-# These will be overridden at runtime
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Copy production environment file and rename it
+# This bypasses Cloud Build substitution issues
+COPY app/env.production.txt .env.production
+
+# The .env.production file contains NEXT_PUBLIC_ vars that Next.js embeds at build time
 
 # Disable Next.js telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1

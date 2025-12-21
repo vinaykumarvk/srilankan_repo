@@ -5,6 +5,7 @@
 
 steps:
   # Step 1: Build the Docker image
+  # Environment variables are now in app/env.production.txt (copied to .env.production in Dockerfile)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -12,10 +13,6 @@ steps:
       - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
       - '-t'
       - 'gcr.io/$PROJECT_ID/srilanka-repo-app:latest'
-      - '--build-arg'
-      - 'NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL'
-      - '--build-arg'
-      - 'NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY'
       - '.'
     id: 'build'
 
@@ -39,7 +36,7 @@ steps:
       - '--image'
       - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
       - '--region'
-      - '$_REGION'
+      - 'europe-west1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
@@ -51,8 +48,6 @@ steps:
       - '0'
       - '--max-instances'
       - '10'
-      - '--set-env-vars'
-      - 'NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY'
     id: 'deploy'
 
 # Store images in Container Registry
@@ -64,7 +59,6 @@ images:
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'
-  dynamic_substitutions: true
 
 # Build timeout
 timeout: '1800s'
