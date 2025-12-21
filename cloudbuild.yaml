@@ -6,9 +6,10 @@
 steps:
   # Step 1: Build the Docker image
   - name: 'gcr.io/cloud-builders/docker'
-    dir: 'app'
     args:
       - 'build'
+      - '-f'
+      - './app/Dockerfile'
       - '-t'
       - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
       - '-t'
@@ -17,7 +18,7 @@ steps:
       - 'NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}'
       - '--build-arg'
       - 'NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}'
-      - '.'
+      - './app'
 
   # Step 2: Push the image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
