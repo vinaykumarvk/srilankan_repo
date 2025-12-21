@@ -4,67 +4,67 @@
 # =============================================
 
 steps:
-  # Step 1: Build the Docker image using bash for proper variable expansion
+  # Step 1: Build the Docker image
   - name: 'gcr.io/cloud-builders/docker'
-    entrypoint: 'bash'
     args:
-      - '-c'
-      - |
-        echo "Building with SUPABASE_URL: ${_NEXT_PUBLIC_SUPABASE_URL}"
-        echo "ANON_KEY length: $${#_NEXT_PUBLIC_SUPABASE_ANON_KEY}"
-        docker build \
-          -t gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA \
-          -t gcr.io/$PROJECT_ID/srilanka-repo-app:latest \
-          --build-arg NEXT_PUBLIC_SUPABASE_URL="${_NEXT_PUBLIC_SUPABASE_URL}" \
-          --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${_NEXT_PUBLIC_SUPABASE_ANON_KEY}" \
-          .
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/srilanka-repo-app:latest'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY'
+      - '.'
+    id: 'build'
 
   # Step 2: Push the image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
+    args: ['push', 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA']
+    id: 'push-sha'
 
   # Step 3: Push the latest tag
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/srilanka-repo-app:latest'
+    args: ['push', 'gcr.io/$PROJECT_ID/srilanka-repo-app:latest']
+    id: 'push-latest'
 
   # Step 4: Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
+    entrypoint: gcloud
     args:
-      - '-c'
-      - |
-        gcloud run deploy srilanka-repo-app \
-          --image gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA \
-          --region ${_REGION} \
-          --platform managed \
-          --allow-unauthenticated \
-          --memory 512Mi \
-          --cpu 1 \
-          --min-instances 0 \
-          --max-instances 10 \
-          --set-env-vars "NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}" \
-          --set-env-vars "NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}"
+      - 'run'
+      - 'deploy'
+      - 'srilanka-repo-app'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
+      - '--region'
+      - '$_REGION'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '10'
+      - '--set-env-vars'
+      - 'NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    id: 'deploy'
 
 # Store images in Container Registry
 images:
   - 'gcr.io/$PROJECT_ID/srilanka-repo-app:$COMMIT_SHA'
   - 'gcr.io/$PROJECT_ID/srilanka-repo-app:latest'
 
-# Substitution variables - MUST be set in Cloud Build trigger
-substitutions:
-  _REGION: 'europe-west1'
-  _NEXT_PUBLIC_SUPABASE_URL: 'REPLACE_IN_TRIGGER'
-  _NEXT_PUBLIC_SUPABASE_ANON_KEY: 'REPLACE_IN_TRIGGER'
-
 # Build options
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'
-  substitution_option: 'ALLOW_LOOSE'
+  dynamic_substitutions: true
 
 # Build timeout
 timeout: '1800s'
