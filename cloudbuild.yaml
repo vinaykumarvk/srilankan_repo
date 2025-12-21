@@ -61,10 +61,10 @@ images:
   - 'gcr.io/$PROJECT_ID/srilanka-repo-app:latest'
 
 # Substitution variables (set these in Cloud Build trigger or via command line)
+# NOTE: _NEXT_PUBLIC_SUPABASE_URL and _NEXT_PUBLIC_SUPABASE_ANON_KEY must be
+# set in the Cloud Build trigger configuration - no defaults here!
 substitutions:
-  _REGION: 'asia-south1'  # Mumbai - closest to Sri Lanka
-  _NEXT_PUBLIC_SUPABASE_URL: ''
-  _NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
+  _REGION: 'europe-west1'
 
 # Build options
 options:
