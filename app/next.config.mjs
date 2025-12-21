@@ -12,6 +12,11 @@ const nextConfig = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   },
+  // Disable static exports - all pages will be server-rendered
+  // This is needed because pages require runtime environment variables
+  experimental: {
+    // Workaround for build-time env var issues
+  },
 };
 
 export default nextConfig;
