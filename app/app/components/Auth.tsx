@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useState, useEffect } from "react";
+import { supabase, isSupabaseConfigured } from "@/lib/supabaseClient";
 
 type AuthMode = "signin" | "signup";
 
@@ -13,6 +13,14 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [configError, setConfigError] = useState(false);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setConfigError(true);
+      setError("Supabase is not configured. Please check environment variables.");
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
