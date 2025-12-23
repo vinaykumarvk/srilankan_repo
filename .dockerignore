@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+LICENSE
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Database scripts (not needed in container)
+db/
+
+# Log files
+*.log
+npm-debug.log*
+
+# Environment files we don't need
+app/.env
+app/.env.local
+app/.env.development
+app/.env.development.local
+app/.env.test.local
+app/.env.production.local
+# Keep env.production.txt - needed for build!
+
+# Node modules will be installed fresh
+app/node_modules
+
+# Next.js build output (will be rebuilt)
+app/.next
+app/out
+
+# Scripts not needed in production
+app/scripts/
+
+# Misc
+*.pid
+*.seed
+*.pid.lock
+

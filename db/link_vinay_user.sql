@@ -8,3 +8,4 @@ WHERE email = 'vinay2.k@intellectdesign.com'
 ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role;
 
 
+

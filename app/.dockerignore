@@ -25,8 +25,13 @@ Thumbs.db
 
 # Environment files (will be provided at runtime)
 .env
-.env.*
-!.env.example
+.env.local
+.env.development
+.env.development.local
+.env.test.local
+.env.production.local
+# Keep env.production.txt - it's needed for Docker build
+!env.production.txt
 
 # Git
 .git
@@ -42,4 +47,5 @@ LICENSE
 
 # Scripts that shouldn't be in container
 scripts/
+
 

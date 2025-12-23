@@ -995,3 +995,4 @@ create policy org_holidays_update on public.org_holidays for update using (publi
 
 SELECT 'STEP 2 COMPLETE: RLS policies created!' as status;
 
+

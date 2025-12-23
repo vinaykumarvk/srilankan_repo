@@ -327,3 +327,4 @@ create index if not exists idx_portfolio_group_members_group on public.portfolio
 -- Success message
 SELECT 'STEP 1 COMPLETE: Schema created!' as status;
 
+

@@ -11,10 +11,15 @@ type NavItem = {
   icon: React.ReactNode;
 };
 
+type NavMenuProps = {
+  collapsed: boolean;
+  onToggle: () => void;
+};
+
 const mainNavItems: NavItem[] = [
   {
     href: "/",
-    label: "Repo Entry",
+    label: "New Repo",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -55,7 +60,7 @@ const mainNavItems: NavItem[] = [
   },
   {
     href: "/rollover",
-    label: "Rollover",
+    label: "Maturity Processing",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="23 4 23 10 17 10"/>
@@ -150,7 +155,29 @@ const settingsNavItems: NavItem[] = [
   },
 ];
 
-export default function NavMenu() {
+const logoutIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+    <polyline points="16 17 21 12 16 7"/>
+    <line x1="21" y1="12" x2="9" y2="12"/>
+  </svg>
+);
+
+const collapseIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="11 17 6 12 11 7"/>
+    <polyline points="18 17 13 12 18 7"/>
+  </svg>
+);
+
+const expandIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="13 17 18 12 13 7"/>
+    <polyline points="6 17 11 12 6 7"/>
+  </svg>
+);
+
+export default function NavMenu({ collapsed, onToggle }: NavMenuProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -184,7 +211,16 @@ export default function NavMenu() {
       </button>
 
       {/* Sidebar navigation */}
-      <nav className={`sidebar-nav ${mobileOpen ? "open" : ""}`}>
+      <nav className={`sidebar-nav ${mobileOpen ? "open" : ""} ${collapsed ? "collapsed" : ""}`}>
+        {/* Collapse toggle button */}
+        <button 
+          className="sidebar-collapse-btn" 
+          onClick={onToggle}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? expandIcon : collapseIcon}
+        </button>
+
         <div className="nav-brand">
           <div className="brand-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -207,6 +243,7 @@ export default function NavMenu() {
                   href={item.href}
                   className={`nav-item ${pathname === item.href ? "active" : ""}`}
                   onClick={() => setMobileOpen(false)}
+                  title={collapsed ? item.label : undefined}
                 >
                   <span className="nav-icon">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
@@ -225,6 +262,7 @@ export default function NavMenu() {
                   href={item.href}
                   className={`nav-item ${pathname === item.href ? "active" : ""}`}
                   onClick={() => setMobileOpen(false)}
+                  title={collapsed ? item.label : undefined}
                 >
                   <span className="nav-icon">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
@@ -243,24 +281,24 @@ export default function NavMenu() {
                   href={item.href}
                   className={`nav-item ${pathname === item.href ? "active" : ""}`}
                   onClick={() => setMobileOpen(false)}
+                  title={collapsed ? item.label : undefined}
                 >
                   <span className="nav-icon">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
                 </Link>
               </li>
             ))}
+            <li>
+              <button
+                className="nav-item nav-logout"
+                onClick={handleSignOut}
+                title={collapsed ? "Logout" : undefined}
+              >
+                <span className="nav-icon">{logoutIcon}</span>
+                <span className="nav-label">Logout</span>
+              </button>
+            </li>
           </ul>
-        </div>
-
-        <div className="nav-footer">
-          <button onClick={handleSignOut} className="nav-signout">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-              <polyline points="16 17 21 12 16 7"/>
-              <line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            <span>Sign Out</span>
-          </button>
         </div>
       </nav>
 
@@ -274,4 +312,3 @@ export default function NavMenu() {
     </>
   );
 }
-

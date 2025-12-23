@@ -82,7 +82,7 @@ export default function RepoEntryPage() {
     symbol: "",
     issueDate: "",
     maturityDate: "",
-    rate: 0,
+    rate: "" as unknown as number, // Empty string for placeholder display
     dayCountBasis: null,
     notes: "",
     allocations: [emptyAllocation()]
@@ -102,7 +102,8 @@ export default function RepoEntryPage() {
     let isActive = true;
 
     const generateSymbol = async () => {
-      if (!draft.counterpartyId || !draft.issueDate || !draft.maturityDate || draft.rate <= 0) {
+      const rateNum = Number(draft.rate);
+      if (!draft.counterpartyId || !draft.issueDate || !draft.maturityDate || !rateNum || rateNum <= 0) {
         setSymbolWarning(null);
         setDraft((prev) => (prev.symbol ? { ...prev, symbol: "" } : prev));
         return;
@@ -112,7 +113,7 @@ export default function RepoEntryPage() {
         p_counterparty_id: draft.counterpartyId,
         p_issue_date: draft.issueDate,
         p_maturity_date: draft.maturityDate,
-        p_rate: draft.rate / 100
+        p_rate: rateNum / 100
       });
 
       if (!isActive) return;
@@ -302,7 +303,7 @@ export default function RepoEntryPage() {
         symbol: "",
         issueDate: "",
         maturityDate: "",
-        rate: 0,
+        rate: "" as unknown as number,
         dayCountBasis: basis,
         notes: "",
         allocations: [emptyAllocation(portfolioRes.data?.[0]?.id)]
@@ -327,11 +328,21 @@ export default function RepoEntryPage() {
     [draft.allocations]
   );
 
+  // Calculate interest for a given principal amount
+  const calculateInterest = (principal: number): number => {
+    if (!tenorDays || !draft.rate || !draft.dayCountBasis || !principal) return 0;
+    const rateDecimal = Number(draft.rate) / 100;
+    return principal * rateDecimal * (tenorDays / draft.dayCountBasis);
+  };
+
   const estimatedInterest = useMemo(() => {
-    if (!tenorDays || !draft.rate || !draft.dayCountBasis) return 0;
-    const rateDecimal = draft.rate / 100;
-    return totalPrincipal * rateDecimal * (tenorDays / draft.dayCountBasis);
+    return calculateInterest(totalPrincipal);
   }, [draft.dayCountBasis, draft.rate, tenorDays, totalPrincipal]);
+
+  // Calculate maturity value (principal + interest)
+  const totalMaturityValue = useMemo(() => {
+    return totalPrincipal + estimatedInterest;
+  }, [totalPrincipal, estimatedInterest]);
 
   const updateAllocation = (id: string, updates: Partial<RepoAllocation>) => {
     setDraft((prev) => ({
@@ -411,19 +422,19 @@ export default function RepoEntryPage() {
       messages.push("At least one allocation is required.");
     }
 
-    const seenPortfolios = new Set<string>();
+    const seenClients = new Set<string>();
     draft.allocations.forEach((row, index) => {
       if (!row.portfolioId) {
-        messages.push(`Allocation ${index + 1}: portfolio is required.`);
+        messages.push(`Allocation ${index + 1}: client is required.`);
       }
       if (row.principal <= 0) {
         messages.push(`Allocation ${index + 1}: principal must be positive.`);
       }
       if (row.portfolioId) {
-        if (seenPortfolios.has(row.portfolioId)) {
-          messages.push(`Allocation ${index + 1}: duplicate portfolio detected.`);
+        if (seenClients.has(row.portfolioId)) {
+          messages.push(`Allocation ${index + 1}: duplicate client detected.`);
         }
-        seenPortfolios.add(row.portfolioId);
+        seenClients.add(row.portfolioId);
       }
     });
 
@@ -597,7 +608,7 @@ export default function RepoEntryPage() {
         symbol: "",
         issueDate: "",
         maturityDate: "",
-        rate: 0,
+        rate: "" as unknown as number,
         notes: "",
         allocations: [emptyAllocation(portfolios[0]?.id)]
       }));
@@ -647,24 +658,48 @@ export default function RepoEntryPage() {
     );
   }
 
+  // Check if symbol can be auto-generated
+  const canGenerateSymbol = Boolean(
+    draft.counterpartyId && draft.issueDate && draft.maturityDate && Number(draft.rate) > 0
+  );
+
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className="badge">Repo Placement • Draft</div>
-          <h1>Repo Series + Allocation Builder</h1>
-          <p>
-            Capture a new Sri Lanka repo placement, allocate across portfolios,
-            and stage for BO approval.
-          </p>
-        </div>
-        <button className="primary" onClick={onSubmit} disabled={submitting}>
-          {submitting ? "Submitting..." : "Submit for Approval"}
-        </button>
-      </header>
+      <section className="repo-details-section">
+        <header className="section-header">
+          <div>
+            <div className="badge">Repo Placement • Draft</div>
+            <h2>Repo Details</h2>
+          </div>
+          <button className="primary" onClick={onSubmit} disabled={submitting}>
+            {submitting ? "Submitting..." : "Submit for Approval"}
+          </button>
+        </header>
 
-      <section>
-        <h2>Repo Series</h2>
+        {/* Summary metrics at top */}
+        <div className="summary-card inline-summary">
+          <div className="summary-item">
+            <label>Total Principal</label>
+            <div>LKR {totalPrincipal.toLocaleString()}</div>
+          </div>
+          <div className="summary-item">
+            <label>Tenor</label>
+            <div>{tenorDays} days</div>
+          </div>
+          <div className="summary-item">
+            <label>Estimated Interest</label>
+            <div>LKR {estimatedInterest.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+          <div className="summary-item highlight">
+            <label>Maturity Value</label>
+            <div>LKR {totalMaturityValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+          <div className="summary-item">
+            <label>Day Count</label>
+            <div>{draft.dayCountBasis === 365 ? "ACT/365" : draft.dayCountBasis === 360 ? "ACT/360" : "-"}</div>
+          </div>
+        </div>
+
         {orgOptions.length > 1 && (
           <div className="section-grid">
             <div>
@@ -722,21 +757,6 @@ export default function RepoEntryPage() {
             </select>
           </div>
           <div>
-            <label>Symbol</label>
-            <input
-              value={draft.symbol}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, symbol: event.target.value }))
-              }
-              placeholder="BOC-REPO-YYYY-MM-DD"
-              readOnly={
-                Boolean(draft.counterpartyId && draft.issueDate && draft.maturityDate && draft.rate) &&
-                !symbolWarning
-              }
-            />
-            {symbolWarning && <p className="footer-note">{symbolWarning}</p>}
-          </div>
-          <div>
             <label>Issue Date</label>
             <input
               type="date"
@@ -763,19 +783,20 @@ export default function RepoEntryPage() {
             <label>Rate (%)</label>
             <input
               type="number"
-              value={draft.rate}
+              value={draft.rate === ('' as unknown as number) ? '' : draft.rate}
               onChange={(event) =>
                 setDraft((prev) => ({
                   ...prev,
-                  rate: Number(event.target.value)
+                  rate: event.target.value === '' ? ('' as unknown as number) : Number(event.target.value)
                 }))
               }
+              placeholder="Enter rate"
               min={0}
               step={0.01}
             />
           </div>
           <div>
-            <label>Day Count Basis</label>
+            <label>Day Count Convention</label>
             <select
               value={draft.dayCountBasis ?? ""}
               onChange={(event) =>
@@ -785,10 +806,9 @@ export default function RepoEntryPage() {
                 }))
               }
             >
-              <option value="">Select basis</option>
-              {defaultDayCountBasis ? (
-                <option value={defaultDayCountBasis}>{defaultDayCountBasis}</option>
-              ) : null}
+              <option value="">Select convention</option>
+              <option value="365">ACT/365</option>
+              <option value="360">ACT/360</option>
             </select>
           </div>
           <div>
@@ -801,6 +821,20 @@ export default function RepoEntryPage() {
               placeholder="Optional trade note"
             />
           </div>
+          {/* Symbol field - placed last since it's auto-generated */}
+          <div className="symbol-field">
+            <label>Symbol {canGenerateSymbol ? "(Auto-generated)" : ""}</label>
+            <input
+              value={draft.symbol}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, symbol: event.target.value }))
+              }
+              placeholder={canGenerateSymbol ? "Generating..." : "Fill fields above to generate"}
+              readOnly={canGenerateSymbol && !symbolWarning}
+              className={canGenerateSymbol && draft.symbol ? "auto-generated" : ""}
+            />
+            {symbolWarning && <p className="footer-note">{symbolWarning}</p>}
+          </div>
         </div>
         {issueDateInvalid && (
           <p className="footer-note">
@@ -810,12 +844,12 @@ export default function RepoEntryPage() {
       </section>
 
       <section className="allocations">
-        <h2>Portfolio Allocations</h2>
+        <h2>Client Allocations</h2>
         {draft.allocations.map((row, index) => (
           <div className="allocation-row" key={row.id}>
             <div className="row-grid">
               <div>
-                <label>Portfolio</label>
+                <label>Client</label>
                 <select
                   value={row.portfolioId}
                   onChange={(event) =>
@@ -826,7 +860,7 @@ export default function RepoEntryPage() {
                     })
                   }
                 >
-                  <option value="">Select portfolio</option>
+                  <option value="">Select client</option>
                   {portfolios.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -838,41 +872,42 @@ export default function RepoEntryPage() {
                 <label>Principal (LKR)</label>
                 <input
                   type="number"
-                  value={row.principal}
+                  value={row.principal || ''}
                   onChange={(event) =>
                     updateAllocation(row.id, {
-                      principal: Number(event.target.value)
+                      principal: Number(event.target.value) || 0
                     })
                   }
+                  placeholder="Enter amount"
                   min={0}
                   step={1000}
                 />
               </div>
               <div>
-                <label>Reinvest Interest</label>
-                <select
-                  value={row.reinvestInterest ? "yes" : "no"}
-                  onChange={(event) =>
-                    updateAllocation(row.id, {
-                      reinvestInterest: event.target.value === "yes"
-                    })
-                  }
-                >
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </select>
+                <label>Interest (LKR)</label>
+                <input
+                  type="text"
+                  value={calculateInterest(row.principal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  readOnly
+                  className="computed-value"
+                />
+              </div>
+              <div>
+                <label>Maturity Value (LKR)</label>
+                <input
+                  type="text"
+                  value={(row.principal + calculateInterest(row.principal)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  readOnly
+                  className="computed-value highlight-value"
+                />
               </div>
               <div>
                 <label>Capital Adjustment</label>
                 <input
-                  type="number"
-                  value={row.capitalAdjustment}
-                  onChange={(event) =>
-                    updateAllocation(row.id, {
-                      capitalAdjustment: Number(event.target.value)
-                    })
-                  }
-                  step={1000}
+                  type="text"
+                  value="NA"
+                  readOnly
+                  className="disabled-input"
                 />
               </div>
               <div>
@@ -923,33 +958,14 @@ export default function RepoEntryPage() {
             </div>
             <div className="actions">
               <button className="ghost" onClick={() => removeAllocation(row.id)}>
-                Remove Allocation {index + 1}
+                Remove
               </button>
             </div>
           </div>
         ))}
         <button className="secondary" onClick={addAllocation}>
-          Add Another Portfolio
+          Add Another Client
         </button>
-      </section>
-
-      <section className="summary-card">
-        <div className="summary-item">
-          <label>Total Principal</label>
-          <div>LKR {totalPrincipal.toLocaleString()}</div>
-        </div>
-        <div className="summary-item">
-          <label>Tenor</label>
-          <div>{tenorDays} days</div>
-        </div>
-        <div className="summary-item">
-          <label>Estimated Interest</label>
-          <div>LKR {estimatedInterest.toFixed(2)}</div>
-        </div>
-        <div className="summary-item">
-          <label>Day Count</label>
-          <div>{draft.dayCountBasis ?? "-"}</div>
-        </div>
       </section>
 
       {validationMessages.length > 0 && (

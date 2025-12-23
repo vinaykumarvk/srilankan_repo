@@ -32,3 +32,4 @@ language sql stable security definer as $$
   limit 1;
 $$;
 
+

@@ -154,6 +154,98 @@ async function seedData() {
     }
   }
 
+  // Step 8: Create bond securities for collateral
+  console.log("\n📜 Creating bond securities (for collateral)...");
+  
+  // First get the security type IDs
+  const { data: secTypeData } = await supabase
+    .from("security_types")
+    .select("id, code")
+    .eq("org_id", ORG_ID)
+    .in("code", ["tbill", "tbond"]);
+  
+  const tbillTypeId = secTypeData?.find(st => st.code === "tbill")?.id;
+  const tbondTypeId = secTypeData?.find(st => st.code === "tbond")?.id;
+
+  if (tbillTypeId && tbondTypeId) {
+    const bonds = [
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbondTypeId,
+        symbol: "SLGB-2028-8.5", 
+        name: "Sri Lanka Government Bond 8.5% 2028",
+        isin: "LK0230128A51",
+        maturity_date: "2028-12-15",
+        coupon_rate: 0.085
+      },
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbondTypeId,
+        symbol: "SLGB-2030-9.0", 
+        name: "Sri Lanka Government Bond 9.0% 2030",
+        isin: "LK0230130B62",
+        maturity_date: "2030-06-15",
+        coupon_rate: 0.09
+      },
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbondTypeId,
+        symbol: "SLGB-2027-7.5", 
+        name: "Sri Lanka Government Bond 7.5% 2027",
+        isin: "LK0230127C73",
+        maturity_date: "2027-03-15",
+        coupon_rate: 0.075
+      },
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbondTypeId,
+        symbol: "SLGB-2029-8.0", 
+        name: "Sri Lanka Government Bond 8.0% 2029",
+        isin: "LK0230129D84",
+        maturity_date: "2029-09-15",
+        coupon_rate: 0.08
+      },
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbillTypeId,
+        symbol: "SLTB-91D-2025Q1", 
+        name: "Sri Lanka T-Bill 91 Day 2025 Q1",
+        isin: "LK0191125E95",
+        maturity_date: "2025-03-31"
+      },
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbillTypeId,
+        symbol: "SLTB-182D-2025Q2", 
+        name: "Sri Lanka T-Bill 182 Day 2025 Q2",
+        isin: "LK0182125F06",
+        maturity_date: "2025-06-30"
+      },
+      { 
+        org_id: ORG_ID, 
+        security_type_id: tbillTypeId,
+        symbol: "SLTB-364D-2025Q4", 
+        name: "Sri Lanka T-Bill 364 Day 2025 Q4",
+        isin: "LK0364125G17",
+        maturity_date: "2025-12-31"
+      }
+    ];
+
+    for (const bond of bonds) {
+      const { error } = await supabase
+        .from("securities")
+        .upsert(bond, { onConflict: "org_id,symbol" });
+      
+      if (error) {
+        console.error(`   ❌ ${bond.symbol}:`, error.message);
+      } else {
+        console.log(`   ✅ ${bond.name}`);
+      }
+    }
+  } else {
+    console.log("   ⚠️ Security types not found, skipping bond creation");
+  }
+
   console.log("\n" + "=".repeat(50));
   console.log("🎉 Reference data seeded successfully!");
   console.log("=".repeat(50));
@@ -161,5 +253,6 @@ async function seedData() {
 }
 
 seedData().catch(console.error);
+
 
 

@@ -7,6 +7,7 @@ import Auth from "./Auth";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     // Check initial auth state
@@ -21,8 +22,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       }
     );
 
+    // Load sidebar state from localStorage
+    const savedCollapsed = localStorage.getItem("sidebarCollapsed");
+    if (savedCollapsed !== null) {
+      setSidebarCollapsed(savedCollapsed === "true");
+    }
+
     return () => subscription.unsubscribe();
   }, []);
+
+  const toggleSidebar = () => {
+    const newState = !sidebarCollapsed;
+    setSidebarCollapsed(newState);
+    localStorage.setItem("sidebarCollapsed", String(newState));
+  };
 
   // Still loading
   if (isAuthenticated === null) {
@@ -41,12 +54,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Authenticated - show app with navigation
   return (
-    <div className="app-layout">
-      <NavMenu />
+    <div className={`app-layout ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <NavMenu collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
       <div className="main-content">
         {children}
       </div>
     </div>
   );
 }
-

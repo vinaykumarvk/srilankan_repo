@@ -166,3 +166,4 @@ SELECT 'STEP 3 COMPLETE: User and data created!' as status,
        'Email: demo@repo.local' as login_email,
        'Password: Demo123!' as login_password;
 
+

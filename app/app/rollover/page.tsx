@@ -1,103 +1,114 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-type OrgOption = { id: string; name: string };
-type Portfolio = { id: string; name: string };
-type Counterparty = { id: string; name: string };
-type SecurityType = { id: string; name: string };
-type PortfolioGroup = { id: string; name: string };
-type PortfolioGroupMember = { group_id: string; portfolio_id: string };
-type ConfigSettings = {
-  day_count_method: string;
-  include_maturity: boolean;
-  use_holiday_calendar: boolean;
-  holiday_roll: string;
-};
-type UserRole = "FO_TRADER" | "BO_OPERATIONS" | "RISK_COMPLIANCE" | "OPS_SUPERVISOR" | "READ_ONLY";
-type Holiday = {
-  id: string;
-  holiday_date: string;
-  description: string | null;
-};
+// Types
+type Counterparty = { id: string; name: string; short_code: string };
+type Portfolio = { id: string; name: string; code: string };
+type SecurityType = { id: string; code: string; name: string };
 
-type RepoTradeOption = {
+type Allocation = {
   id: string;
-  label: string;
-  symbol: string | null;
-};
-
-type BatchItem = {
-  id: string;
-  status: string;
-  error_message: string | null;
-  new_invest_amount: number;
+  portfolio_id: string;
   principal: number;
-  interest: number;
   reinvest_interest: boolean;
-  maturity_proceeds: number;
   capital_adjustment: number;
-  collateral_mode: string;
-  collateral_status: string | null;
-  new_repo_allocation_id: string | null;
-  portfolio: { name: string } | null;
+  status: string;
+  portfolios: { id: string; name: string; code: string } | null;
 };
 
-type Mode = "MASS" | "SINGLE";
+type RepoTrade = {
+  id: string;
+  repo_security_id: string;
+  counterparty_id: string;
+  issue_date: string;
+  maturity_date: string;
+  rate: number;
+  day_count_basis: number;
+  status: string;
+  notes: string | null;
+  securities: { id: string; symbol: string; name: string } | null;
+  counterparties: { id: string; name: string; short_code: string } | null;
+  repo_allocations: Allocation[];
+};
 
-export default function RolloverPage() {
+type NewAllocation = {
+  id: string;
+  portfolioId: string;
+  portfolioName: string;
+  portfolioCode: string;
+  oldPrincipal: number;
+  oldInterest: number;
+  principalAdjustment: number;
+  interestAction: "reinvest" | "payout";
+  newPrincipal: number;
+  rolloverAmount: number;
+  included: boolean;
+};
+
+// Helper functions
+function formatCurrency(value: number): string {
+  return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function formatInterest(value: number): string {
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function addDays(dateStr: string, days: number): string {
+  const date = new Date(dateStr);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function calculateInterest(principal: number, rate: number, tenor: number, dayCountBasis: number): number {
+  return (principal * rate * tenor) / dayCountBasis;
+}
+
+export default function MaturityProcessingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const [orgOptions, setOrgOptions] = useState<OrgOption[]>([]);
   const [orgId, setOrgId] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
-  const [userRole, setUserRole] = useState<UserRole | null>(null);
-  const [batchId, setBatchId] = useState<string>("");
-  const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
 
-  const [mode, setMode] = useState<Mode>("MASS");
-  const [rolloverDate, setRolloverDate] = useState<string>("");
-  const [portfolioIds, setPortfolioIds] = useState<string[]>([]);
-  const [oldRepoTradeId, setOldRepoTradeId] = useState<string>("");
-  const [oldRepoTrades, setOldRepoTrades] = useState<RepoTradeOption[]>([]);
-
-  const [newRate, setNewRate] = useState<string>("");
-  const [newMaturityDate, setNewMaturityDate] = useState<string>("");
-  const [newCounterpartyId, setNewCounterpartyId] = useState<string>("");
-  const [newSecurityTypeId, setNewSecurityTypeId] = useState<string>("");
-  const [collateralMode, setCollateralMode] = useState<string>("REUSE");
-  const [amountOverride, setAmountOverride] = useState<string>("");
-
-  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  // Reference data
   const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [securityTypes, setSecurityTypes] = useState<SecurityType[]>([]);
-  const [portfolioGroups, setPortfolioGroups] = useState<PortfolioGroup[]>([]);
-  const [portfolioGroupMembers, setPortfolioGroupMembers] = useState<PortfolioGroupMember[]>([]);
-  const [groupId, setGroupId] = useState<string>("");
-  const [configSettings, setConfigSettings] = useState<ConfigSettings | null>(null);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [holidayDate, setHolidayDate] = useState<string>("");
-  const [holidayDescription, setHolidayDescription] = useState<string>("");
 
-  const [batchStatus, setBatchStatus] = useState<string>("");
-  const [batchCounts, setBatchCounts] = useState<Record<string, number>>({});
+  // Maturing trades
+  const [repoTrades, setRepoTrades] = useState<RepoTrade[]>([]);
 
-  useEffect(() => {
-    if (mode === "SINGLE" && portfolioIds.length > 1) {
-      setPortfolioIds([portfolioIds[0]]);
-    }
-    if (mode === "SINGLE" && groupId) {
-      setGroupId("");
-    }
-    if (mode !== "SINGLE") {
-      setOldRepoTradeId("");
-      setOldRepoTrades([]);
-    }
-  }, [mode, portfolioIds, groupId]);
+  // Selected trade for action
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [actionMode, setActionMode] = useState<"close" | "rollover" | null>(null);
 
+  // New repo draft (for rollover)
+  const [newCounterpartyId, setNewCounterpartyId] = useState<string>("");
+  const [newRate, setNewRate] = useState<string>("");
+  const [newTenor, setNewTenor] = useState<string>("");
+  const [newDayCount, setNewDayCount] = useState<string>("365");
+  const [newIssueDate, setNewIssueDate] = useState<string>("");
+  const [newMaturityDate, setNewMaturityDate] = useState<string>("");
+  const [newSymbol, setNewSymbol] = useState<string>("");
+  const [newAllocations, setNewAllocations] = useState<NewAllocation[]>([]);
+
+  // Processing state
+  const [processing, setProcessing] = useState(false);
+
+  // Initialize
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -105,7 +116,7 @@ export default function RolloverPage() {
 
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData.user) {
-        setError("Please sign in to access rollovers.");
+        setError("Please sign in to access maturity processing.");
         setLoading(false);
         return;
       }
@@ -113,1168 +124,766 @@ export default function RolloverPage() {
 
       const { data: memberData, error: memberError } = await supabase
         .from("org_members")
-        .select("org_id, orgs ( id, name )")
-        .eq("user_id", authData.user.id);
+        .select("org_id")
+        .eq("user_id", authData.user.id)
+        .single();
 
-      if (memberError) {
-        setError(memberError.message);
-        setLoading(false);
-        return;
-      }
-
-      const orgs: OrgOption[] =
-        (memberData as Array<{ org_id: string; orgs?: { id?: string; name?: string } | null }>)
-          ?.map((row) => ({
-            id: row.org_id,
-            name: row.orgs?.name ?? row.org_id
-          }))
-          .filter((row) => Boolean(row.id)) ?? [];
-
-      if (!orgs.length) {
+      if (memberError || !memberData) {
         setError("No organization membership found.");
         setLoading(false);
         return;
       }
 
-      setOrgOptions(orgs);
-      setOrgId(orgs[0].id);
+      setOrgId(memberData.org_id);
+      await loadData(memberData.org_id);
       setLoading(false);
     };
 
-    init();
+    init().catch(err => {
+      console.error("Init error:", err);
+      setError(err.message || "Failed to initialize");
+      setLoading(false);
+    });
   }, []);
 
-  useEffect(() => {
-    const loadOrgData = async () => {
-      if (!orgId) return;
+  const loadData = async (targetOrgId: string) => {
+    const today = new Date().toISOString().split("T")[0];
 
-      setLoading(true);
-      setError(null);
-      setSuccessMessage(null);
-      setBatchId("");
-      setBatchItems([]);
-      setBatchStatus("");
-      setBatchCounts({});
-
-      const [
-        portfolioRes,
-        counterpartyRes,
-        securityTypeRes,
-        configRes,
-        holidayRes,
-        roleRes,
-        groupRes,
-        groupMemberRes
-      ] = await Promise.all([
-        supabase.from("portfolios").select("id, name").eq("org_id", orgId),
-        supabase.from("counterparties").select("id, name").eq("org_id", orgId),
-        supabase
-          .from("security_types")
-          .select("id, name")
-          .eq("org_id", orgId)
-          .eq("is_repo_type", true),
-        supabase
-          .from("config_settings")
-          .select("day_count_method, include_maturity, use_holiday_calendar, holiday_roll")
-          .eq("org_id", orgId)
-          .single(),
-        supabase
-          .from("org_holidays")
-          .select("id, holiday_date, description")
-          .eq("org_id", orgId)
-          .order("holiday_date", { ascending: true }),
-        userId
-          ? supabase
-              .from("org_members")
-              .select("role")
-              .eq("org_id", orgId)
-              .eq("user_id", userId)
-              .single()
-          : Promise.resolve({ data: null, error: null }),
-        supabase.from("portfolio_groups").select("id, name").eq("org_id", orgId),
-        supabase
-          .from("portfolio_group_members")
-          .select("group_id, portfolio_id")
-          .eq("org_id", orgId)
-      ]);
-
-      if (
-        portfolioRes.error ||
-        counterpartyRes.error ||
-        securityTypeRes.error ||
-        configRes.error ||
-        holidayRes.error ||
-        roleRes.error ||
-        groupRes.error ||
-        groupMemberRes.error
-      ) {
-        setError(
-          portfolioRes.error?.message ||
-            counterpartyRes.error?.message ||
-            securityTypeRes.error?.message ||
-            configRes.error?.message ||
-            holidayRes.error?.message ||
-            roleRes.error?.message ||
-            groupRes.error?.message ||
-            groupMemberRes.error?.message ||
-            "Failed to load rollover reference data."
-        );
-        setLoading(false);
-        return;
-      }
-
-      setPortfolios(portfolioRes.data ?? []);
-      setCounterparties(counterpartyRes.data ?? []);
-      setSecurityTypes(securityTypeRes.data ?? []);
-      setConfigSettings(configRes.data as ConfigSettings);
-      setHolidays((holidayRes.data as Holiday[]) ?? []);
-      setUserRole((roleRes.data?.role as UserRole) ?? null);
-      setPortfolioGroups((groupRes.data as PortfolioGroup[]) ?? []);
-      setPortfolioGroupMembers((groupMemberRes.data as PortfolioGroupMember[]) ?? []);
-      setPortfolioIds([]);
-      setGroupId("");
-      setLoading(false);
-    };
-
-    loadOrgData();
-  }, [orgId, userId]);
-
-  const selectedPortfolioNames = useMemo(() => {
-    const lookup = new Map(portfolios.map((p) => [p.id, p.name]));
-    return portfolioIds.map((id) => lookup.get(id) ?? id);
-  }, [portfolioIds, portfolios]);
-
-  const hasExecuteRole =
-    userRole === "BO_OPERATIONS" || userRole === "OPS_SUPERVISOR";
-
-  const groupPortfolioIds = useMemo(() => {
-    if (!groupId) return [];
-    return portfolioGroupMembers
-      .filter((member) => member.group_id === groupId)
-      .map((member) => member.portfolio_id);
-  }, [groupId, portfolioGroupMembers]);
-
-  useEffect(() => {
-    if (groupId) {
-      setPortfolioIds(groupPortfolioIds);
-    }
-  }, [groupId, groupPortfolioIds]);
-
-  useEffect(() => {
-    const loadOldRepoTrades = async () => {
-      if (mode !== "SINGLE" || !orgId || !rolloverDate || portfolioIds.length !== 1) {
-        setOldRepoTrades([]);
-        setOldRepoTradeId("");
-        return;
-      }
-
-      const portfolioId = portfolioIds[0];
-      const { data, error: tradeError } = await supabase
-        .from("repo_allocations")
-        .select(
-          "repo_trade_id, repo_trades ( id, issue_date, maturity_date, rate, counterparties ( name ), securities ( symbol ) )"
-        )
-        .eq("org_id", orgId)
-        .eq("portfolio_id", portfolioId)
-        .in("status", ["ACTIVE", "POSTED"])
-        .eq("repo_trades.maturity_date", rolloverDate);
-
-      if (tradeError) {
-        setOldRepoTrades([]);
-        setOldRepoTradeId("");
-        return;
-      }
-
-      const tradeMap = new Map<string, RepoTradeOption>();
-      (data as Array<{
-        repo_trade_id: string | null;
-        repo_trades?: {
-          id?: string;
-          issue_date?: string;
-          maturity_date?: string;
-          rate?: number;
-          counterparties?: { name?: string } | null;
-          securities?: { symbol?: string } | null;
-        } | null;
-      }>).forEach((row) => {
-        const trade = row.repo_trades;
-        if (!trade?.id) return;
-        const symbol = trade.securities?.symbol ?? null;
-        const ratePct = trade.rate ? (trade.rate * 100).toFixed(2) : "0.00";
-        const label = `${symbol ?? "REPO"} • ${trade.counterparties?.name ?? "Counterparty"} • ${
-          trade.issue_date ?? "?"
-        } -> ${trade.maturity_date ?? "?"} @ ${ratePct}%`;
-        tradeMap.set(trade.id, { id: trade.id, label, symbol });
-      });
-
-      const options = Array.from(tradeMap.values());
-      setOldRepoTrades(options);
-      setOldRepoTradeId((prev) => {
-        if (options.length === 1) return options[0].id;
-        return options.some((option) => option.id === prev) ? prev : "";
-      });
-    };
-
-    loadOldRepoTrades();
-  }, [mode, orgId, rolloverDate, portfolioIds]);
-
-  const totals = useMemo(() => {
-    return batchItems.reduce(
-      (acc, item) => {
-        acc.principal += item.principal || 0;
-        acc.interest += item.interest || 0;
-        acc.maturity += item.maturity_proceeds || 0;
-        acc.newInvest += item.new_invest_amount || 0;
-        acc.capital += item.capital_adjustment || 0;
-        return acc;
-      },
-      {
-        principal: 0,
-        interest: 0,
-        maturity: 0,
-        newInvest: 0,
-        capital: 0
-      }
-    );
-  }, [batchItems]);
-
-  const rollup = useMemo(() => {
-    return batchItems.reduce(
-      (acc, item) => {
-        if (item.status !== "SUCCESS" && item.status !== "SKIPPED") {
-          return acc;
-        }
-        acc.closedCount += 1;
-        if (item.status === "SUCCESS" && item.new_invest_amount > 0) {
-          acc.openedCount += 1;
-        }
-        acc.maturity += item.maturity_proceeds || 0;
-        acc.newInvest += item.new_invest_amount || 0;
-        if (!item.reinvest_interest) {
-          acc.interestWithdrawn += item.interest || 0;
-        }
-        return acc;
-      },
-      {
-        closedCount: 0,
-        openedCount: 0,
-        maturity: 0,
-        newInvest: 0,
-        interestWithdrawn: 0
-      }
-    );
-  }, [batchItems]);
-
-  const portfolioReport = useMemo(() => {
-    const grouped = new Map<
-      string,
-      {
-        principal: number;
-        interest: number;
-        maturity: number;
-        newInvest: number;
-        capital: number;
-      }
-    >();
-
-    batchItems.forEach((item) => {
-      const key = item.portfolio?.name ?? "Portfolio";
-      const current = grouped.get(key) || {
-        principal: 0,
-        interest: 0,
-        maturity: 0,
-        newInvest: 0,
-        capital: 0
-      };
-      current.principal += item.principal || 0;
-      current.interest += item.interest || 0;
-      current.maturity += item.maturity_proceeds || 0;
-      current.newInvest += item.new_invest_amount || 0;
-      current.capital += item.capital_adjustment || 0;
-      grouped.set(key, current);
-    });
-
-    return Array.from(grouped.entries());
-  }, [batchItems]);
-
-  const validate = () => {
-    const effectivePortfolioIds =
-      groupId && groupPortfolioIds.length ? groupPortfolioIds : portfolioIds;
-    if (!orgId) return "Organization is required.";
-    if (!rolloverDate) return "Rollover date is required.";
-    if (mode === "SINGLE" && effectivePortfolioIds.length !== 1) {
-      return "Single rollover requires exactly one portfolio.";
-    }
-    if (mode === "SINGLE" && !oldRepoTradeId) {
-      return "Single rollover requires selecting the old repo series.";
-    }
-    if (amountOverride && effectivePortfolioIds.length !== 1) {
-      return "Amount override requires a single portfolio selection.";
-    }
-    return null;
-  };
-
-  const buildParams = () => {
-    const params: Record<string, string | number> = {};
-    if (newRate) params.new_rate = Number(newRate) / 100;
-    if (newMaturityDate) params.new_maturity_date = newMaturityDate;
-    if (newCounterpartyId) params.new_counterparty_id = newCounterpartyId;
-    if (newSecurityTypeId) params.new_security_type_id = newSecurityTypeId;
-    if (collateralMode) params.collateral_mode = collateralMode;
-    if (amountOverride) params.amount_override = Number(amountOverride);
-    if (groupId) params.group_id = groupId;
-    if (oldRepoTradeId) params.old_repo_trade_id = oldRepoTradeId;
-    return params;
-  };
-
-  const handleCreateBatch = async () => {
-    setError(null);
-    setSuccessMessage(null);
-
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    const params = buildParams();
-    const { data, error: createError } = await supabase.rpc("create_rollover_batch", {
-      p_org_id: orgId,
-      p_mode: mode,
-      p_rollover_date: rolloverDate,
-      p_portfolio_ids: groupId ? null : portfolioIds.length ? portfolioIds : null,
-      p_params: params
-    });
-
-    if (createError) {
-      setError(createError.message);
-      return;
-    }
-
-    const id = data as string;
-    setBatchId(id);
-    await loadBatchMeta(id);
-    setSuccessMessage("Rollover batch created. Build items to preview.");
-  };
-
-  const handleBuildItems = async () => {
-    if (!batchId) {
-      setError("Create a batch first.");
-      return;
-    }
-    setError(null);
-    setSuccessMessage(null);
-
-    const { error: buildError } = await supabase.rpc("build_rollover_batch_items", {
-      p_batch_id: batchId
-    });
-
-    if (buildError) {
-      setError(buildError.message);
-      return;
-    }
-
-    await Promise.all([loadBatchItems(batchId), loadBatchMeta(batchId)]);
-    setSuccessMessage("Batch items generated.");
-  };
-
-  const handleSubmitBatch = async () => {
-    if (!batchId) {
-      setError("Create a batch first.");
-      return;
-    }
-    setError(null);
-    setSuccessMessage(null);
-
-    const { error: submitError } = await supabase.rpc("submit_rollover_batch", {
-      p_batch_id: batchId
-    });
-
-    if (submitError) {
-      setError(submitError.message);
-      return;
-    }
-
-    await loadBatchMeta(batchId);
-    setSuccessMessage("Batch submitted for approval.");
-  };
-
-  const handleApproveBatch = async () => {
-    if (!batchId) {
-      setError("Create a batch first.");
-      return;
-    }
-    setError(null);
-    setSuccessMessage(null);
-
-    const { error: approveError } = await supabase.rpc("approve_rollover_batch", {
-      p_batch_id: batchId
-    });
-
-    if (approveError) {
-      setError(approveError.message);
-      return;
-    }
-
-    await loadBatchMeta(batchId);
-    setSuccessMessage("Batch approved. You can now execute.");
-  };
-
-  const loadBatchItems = async (targetBatchId: string) => {
-    const { data, error: itemsError } = await supabase
-      .from("rollover_batch_items")
-      .select(
-        "id, status, error_message, principal, interest, reinvest_interest, maturity_proceeds, capital_adjustment, new_invest_amount, collateral_mode, collateral_status, new_repo_allocation_id, portfolio:portfolios(name)"
-      )
-      .eq("batch_id", targetBatchId)
-      .order("created_at", { ascending: true });
-
-    if (itemsError) {
-      setError(itemsError.message);
-      return;
-    }
-
-    setBatchItems((data as unknown as BatchItem[]) ?? []);
-  };
-
-  const loadBatchMeta = async (targetBatchId: string) => {
-    const { data, error: batchError } = await supabase
-      .from("rollover_batches")
-      .select("status")
-      .eq("id", targetBatchId)
-      .single();
-
-    if (batchError) {
-      setError(batchError.message);
-      return;
-    }
-
-    const { data: countsData, error: countsError } = await supabase
-      .from("rollover_batch_items")
-      .select("status")
-      .eq("batch_id", targetBatchId);
-
-    if (countsError) {
-      setError(countsError.message);
-      return;
-    }
-
-    const counts = (countsData as Array<{ status: string }> | null)?.reduce(
-      (acc, row) => {
-        acc[row.status] = (acc[row.status] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    setBatchStatus(data?.status ?? "");
-    setBatchCounts(counts ?? {});
-  };
-
-  const handleExecuteBatch = async () => {
-    if (!batchId) {
-      setError("Create a batch first.");
-      return;
-    }
-    setError(null);
-    setSuccessMessage(null);
-
-    const { error: execError } = await supabase.rpc("execute_rollover_batch", {
-      p_batch_id: batchId
-    });
-
-    if (execError) {
-      setError(execError.message);
-      return;
-    }
-
-    await Promise.all([loadBatchItems(batchId), loadBatchMeta(batchId)]);
-    setSuccessMessage("Batch executed. Review item results.");
-  };
-
-  const escapeCsv = (value: string | number | null) => {
-    const str = value === null || value === undefined ? "" : String(value);
-    const escaped = str.replace(/"/g, '""');
-    return `"${escaped}"`;
-  };
-
-  const handleExportCsv = () => {
-    if (!batchItems.length) return;
-
-    const headers = [
-      "portfolio",
-      "principal",
-      "interest",
-      "reinvest_interest",
-      "maturity_proceeds",
-      "capital_adjustment",
-      "new_invest_amount",
-      "net_cash_delta",
-      "status",
-      "error_message"
-    ];
-
-    const rows = batchItems.map((item) => [
-      item.portfolio?.name ?? "Portfolio",
-      item.principal,
-      item.interest,
-      item.reinvest_interest ? "YES" : "NO",
-      item.maturity_proceeds,
-      item.capital_adjustment,
-      item.new_invest_amount,
-      item.new_invest_amount - item.maturity_proceeds,
-      item.status,
-      item.error_message ?? ""
+    const [counterpartyRes, portfolioRes, secTypeRes, tradesRes] = await Promise.all([
+      supabase.from("counterparties").select("id, name, short_code").eq("org_id", targetOrgId),
+      supabase.from("portfolios").select("id, name, code").eq("org_id", targetOrgId),
+      supabase.from("security_types").select("id, code, name").eq("org_id", targetOrgId).eq("is_repo_type", true),
+      supabase
+        .from("repo_trades")
+        .select(`
+          id, repo_security_id, counterparty_id, issue_date, maturity_date, rate, day_count_basis, status, notes,
+          securities ( id, symbol, name ),
+          counterparties ( id, name, short_code ),
+          repo_allocations ( id, portfolio_id, principal, reinvest_interest, capital_adjustment, status, portfolios ( id, name, code ) )
+        `)
+        .eq("org_id", targetOrgId)
+        .in("status", ["APPROVED", "ACTIVE", "POSTED"])
+        .gte("maturity_date", today)
+        .order("maturity_date", { ascending: true })
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map(escapeCsv).join(","))
-      .join("\n");
+    if (counterpartyRes.error) { setError(`Failed to load counterparties: ${counterpartyRes.error.message}`); return; }
+    if (portfolioRes.error) { setError(`Failed to load portfolios: ${portfolioRes.error.message}`); return; }
+    if (secTypeRes.error) { setError(`Failed to load security types: ${secTypeRes.error.message}`); return; }
+    if (tradesRes.error) { setError(`Failed to load trades: ${tradesRes.error.message}`); return; }
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `rollover_batch_${batchId || "export"}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    setCounterparties((counterpartyRes.data as Counterparty[]) || []);
+    setPortfolios((portfolioRes.data as Portfolio[]) || []);
+    setSecurityTypes((secTypeRes.data as SecurityType[]) || []);
+    setRepoTrades((tradesRes.data as unknown as RepoTrade[]) || []);
   };
 
-  const handleToggleHolidayConfig = async (updates: Partial<ConfigSettings>) => {
-    if (!configSettings) return;
-    setError(null);
+  // Calculate trade summary
+  const calculateTradeSummary = (trade: RepoTrade) => {
+    const tenor = daysBetween(trade.issue_date, trade.maturity_date);
+    let totalPrincipal = 0;
+    let totalInterest = 0;
 
-    const next = { ...configSettings, ...updates };
-    const { error: updateError } = await supabase
-      .from("config_settings")
-      .update({
-        day_count_method: next.day_count_method,
-        include_maturity: next.include_maturity,
-        use_holiday_calendar: next.use_holiday_calendar,
-        holiday_roll: next.holiday_roll
-      })
-      .eq("org_id", orgId);
-
-    if (updateError) {
-      setError(updateError.message);
-      return;
-    }
-
-    setConfigSettings(next);
-  };
-
-  const handleAddHoliday = async () => {
-    if (!holidayDate) {
-      setError("Holiday date is required.");
-      return;
-    }
-    setError(null);
-
-    const { error: insertError } = await supabase.from("org_holidays").insert({
-      org_id: orgId,
-      holiday_date: holidayDate,
-      description: holidayDescription || null
+    trade.repo_allocations.forEach(alloc => {
+      totalPrincipal += alloc.principal;
+      totalInterest += calculateInterest(alloc.principal, trade.rate, tenor, trade.day_count_basis);
     });
 
-    if (insertError) {
-      setError(insertError.message);
-      return;
-    }
+    const totalMaturityValue = totalPrincipal + totalInterest;
+    const daysToMaturity = daysBetween(new Date().toISOString().split("T")[0], trade.maturity_date);
 
-    const { data: holidayRes, error: holidayError } = await supabase
-      .from("org_holidays")
-      .select("id, holiday_date, description")
-      .eq("org_id", orgId)
-      .order("holiday_date", { ascending: true });
-
-    if (holidayError) {
-      setError(holidayError.message);
-      return;
-    }
-
-    setHolidays((holidayRes as Holiday[]) ?? []);
-    setHolidayDate("");
-    setHolidayDescription("");
+    return { tenor, totalPrincipal, totalInterest, totalMaturityValue, daysToMaturity };
   };
 
-  const handleRemoveHoliday = async (holidayId: string) => {
+  // Start rollover - initialize new repo draft from old trade
+  const startRollover = (trade: RepoTrade) => {
+    const oldTenor = daysBetween(trade.issue_date, trade.maturity_date);
+    const issueDate = addDays(trade.maturity_date, 1);
+    const maturityDate = addDays(issueDate, oldTenor);
+
+    setSelectedTradeId(trade.id);
+    setActionMode("rollover");
+    setNewCounterpartyId(trade.counterparty_id);
+    setNewRate((trade.rate * 100).toFixed(2));
+    setNewTenor(oldTenor.toString());
+    setNewDayCount(trade.day_count_basis.toString());
+    setNewIssueDate(issueDate);
+    setNewMaturityDate(maturityDate);
+    setNewSymbol("");
+
+    // Initialize allocations from old trade
+    const allocations: NewAllocation[] = trade.repo_allocations.map(alloc => {
+      const oldInterest = calculateInterest(alloc.principal, trade.rate, oldTenor, trade.day_count_basis);
+      return {
+        id: crypto.randomUUID(),
+        portfolioId: alloc.portfolio_id,
+        portfolioName: alloc.portfolios?.name || "Unknown",
+        portfolioCode: alloc.portfolios?.code || "",
+        oldPrincipal: alloc.principal,
+        oldInterest,
+        principalAdjustment: 0,
+        interestAction: "reinvest" as const,
+        newPrincipal: alloc.principal,
+        rolloverAmount: alloc.principal + oldInterest,
+        included: true
+      };
+    });
+
+    setNewAllocations(allocations);
+  };
+
+  // Start close
+  const startClose = (trade: RepoTrade) => {
+    setSelectedTradeId(trade.id);
+    setActionMode("close");
+  };
+
+  // Cancel action
+  const cancelAction = () => {
+    setSelectedTradeId(null);
+    setActionMode(null);
+    setNewAllocations([]);
+    setNewSymbol("");
+  };
+
+  // Update tenor and recalculate maturity date
+  useEffect(() => {
+    if (newIssueDate && newTenor) {
+      const tenor = parseInt(newTenor);
+      if (!isNaN(tenor) && tenor > 0) {
+        setNewMaturityDate(addDays(newIssueDate, tenor));
+      }
+    }
+  }, [newTenor, newIssueDate]);
+
+  // Generate symbol when key fields change
+  useEffect(() => {
+    const generateSymbol = async () => {
+      const rate = parseFloat(newRate) / 100;
+      if (!newCounterpartyId || !newIssueDate || !newMaturityDate || isNaN(rate) || rate <= 0) {
+        setNewSymbol("");
+        return;
+      }
+
+      console.log("Generating symbol with:", { newCounterpartyId, newIssueDate, newMaturityDate, rate });
+
+      const { data, error } = await supabase.rpc("build_repo_symbol", {
+        p_counterparty_id: newCounterpartyId,
+        p_issue_date: newIssueDate,
+        p_maturity_date: newMaturityDate,
+        p_rate: rate
+      });
+
+      console.log("Symbol generation result:", { data, error });
+
+      if (!error && data) {
+        setNewSymbol(data as string);
+      } else if (error) {
+        console.error("Symbol generation error:", error);
+      }
+    };
+
+    if (actionMode === "rollover") {
+      generateSymbol();
+    }
+  }, [newCounterpartyId, newIssueDate, newMaturityDate, newRate, actionMode]);
+
+  // Recalculate allocations when rate/tenor/daycount changes
+  useEffect(() => {
+    if (actionMode !== "rollover" || newAllocations.length === 0) return;
+
+    const rate = parseFloat(newRate) / 100;
+    const tenor = parseInt(newTenor);
+    const dayCount = parseInt(newDayCount);
+    if (isNaN(rate) || isNaN(tenor) || isNaN(dayCount)) return;
+
+    setNewAllocations(prev => prev.map(alloc => {
+      const newPrincipal = alloc.oldPrincipal + alloc.principalAdjustment;
+      const rolloverAmount = newPrincipal + (alloc.interestAction === "reinvest" ? alloc.oldInterest : 0);
+      return { ...alloc, newPrincipal, rolloverAmount };
+    }));
+  }, [newRate, newTenor, newDayCount, actionMode]);
+
+  // Update allocation
+  const updateAllocation = (id: string, updates: Partial<NewAllocation>) => {
+    const rate = parseFloat(newRate) / 100;
+    const tenor = parseInt(newTenor);
+    const dayCount = parseInt(newDayCount);
+
+    setNewAllocations(prev => prev.map(alloc => {
+      if (alloc.id !== id) return alloc;
+      const updated = { ...alloc, ...updates };
+      updated.newPrincipal = updated.oldPrincipal + updated.principalAdjustment;
+      updated.rolloverAmount = updated.newPrincipal + (updated.interestAction === "reinvest" ? updated.oldInterest : 0);
+      return updated;
+    }));
+  };
+
+  // Add new client allocation
+  const addNewClient = (portfolioId: string) => {
+    const portfolio = portfolios.find(p => p.id === portfolioId);
+    if (!portfolio) return;
+
+    // Check if already exists
+    if (newAllocations.some(a => a.portfolioId === portfolioId)) {
+      setError("This client is already in the allocation list.");
+      return;
+    }
+
+    const newAlloc: NewAllocation = {
+      id: crypto.randomUUID(),
+      portfolioId: portfolio.id,
+      portfolioName: portfolio.name,
+      portfolioCode: portfolio.code,
+      oldPrincipal: 0,
+      oldInterest: 0,
+      principalAdjustment: 0,
+      interestAction: "reinvest",
+      newPrincipal: 0,
+      rolloverAmount: 0,
+      included: true
+    };
+
+    setNewAllocations(prev => [...prev, newAlloc]);
+  };
+
+  // Remove client allocation
+  const removeAllocation = (id: string) => {
+    setNewAllocations(prev => prev.filter(a => a.id !== id));
+  };
+
+  // Get available clients (not already in allocations)
+  const availableClients = useMemo(() => {
+    const usedIds = new Set(newAllocations.map(a => a.portfolioId));
+    return portfolios.filter(p => !usedIds.has(p.id));
+  }, [portfolios, newAllocations]);
+
+  // Calculate new repo totals
+  const newRepoTotals = useMemo(() => {
+    const included = newAllocations.filter(a => a.included);
+    const rate = parseFloat(newRate) / 100;
+    const tenor = parseInt(newTenor);
+    const dayCount = parseInt(newDayCount);
+
+    const totalRolloverAmount = included.reduce((sum, a) => sum + a.rolloverAmount, 0);
+    const totalNewInterest = !isNaN(rate) && !isNaN(tenor) && !isNaN(dayCount) 
+      ? calculateInterest(totalRolloverAmount, rate, tenor, dayCount) 
+      : 0;
+    const totalMaturityValue = totalRolloverAmount + totalNewInterest;
+    const totalInterestPaidOut = included
+      .filter(a => a.interestAction === "payout")
+      .reduce((sum, a) => sum + a.oldInterest, 0);
+
+    return {
+      count: included.length,
+      totalRolloverAmount,
+      totalNewInterest,
+      totalMaturityValue,
+      totalInterestPaidOut
+    };
+  }, [newAllocations, newRate, newTenor, newDayCount]);
+
+  // Execute close
+  const executeClose = async () => {
+    const trade = repoTrades.find(t => t.id === selectedTradeId);
+    if (!trade || !orgId) return;
+
+    setProcessing(true);
     setError(null);
-    const { error: deleteError } = await supabase
-      .from("org_holidays")
-      .delete()
-      .eq("id", holidayId);
 
-    if (deleteError) {
-      setError(deleteError.message);
+    try {
+      await supabase.from("repo_trades").update({ status: "CLOSED" }).eq("id", trade.id);
+      await supabase.from("repo_allocations").update({ status: "CLOSED" }).eq("repo_trade_id", trade.id);
+
+      // Return collateral
+      for (const alloc of trade.repo_allocations) {
+        await supabase.from("collateral_positions").update({ status: "RETURNED" }).eq("repo_allocation_id", alloc.id);
+      }
+
+      setSuccessMessage(`Trade ${trade.securities?.symbol} closed successfully.`);
+      cancelAction();
+      await loadData(orgId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Close failed");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Execute rollover - create new repo
+  const executeRollover = async () => {
+    console.log("executeRollover called", { selectedTradeId, orgId, newSymbol });
+    
+    const oldTrade = repoTrades.find(t => t.id === selectedTradeId);
+    if (!oldTrade || !orgId || !newSymbol) {
+      console.error("Missing required data:", { oldTrade: !!oldTrade, orgId, newSymbol });
+      setError(`Cannot proceed: ${!oldTrade ? "Trade not found" : !orgId ? "Organization not set" : "Symbol not generated"}`);
       return;
     }
 
-    setHolidays((prev) => prev.filter((holiday) => holiday.id !== holidayId));
-  };
-
-  const togglePortfolio = (id: string) => {
-    if (mode === "SINGLE") {
-      setPortfolioIds([id]);
+    const includedAllocations = newAllocations.filter(a => a.included);
+    if (includedAllocations.length === 0) {
+      setError("Please include at least one client allocation.");
       return;
     }
-    setPortfolioIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+
+    console.log("Starting rollover with:", { oldTrade: oldTrade.id, allocations: includedAllocations.length });
+    setProcessing(true);
+    setError(null);
+
+    try {
+      const rate = parseFloat(newRate) / 100;
+      const dayCount = parseInt(newDayCount);
+      const counterparty = counterparties.find(c => c.id === newCounterpartyId);
+      const securityName = `${counterparty?.name || "Repo"} ${newIssueDate} -> ${newMaturityDate} @ ${newRate}%`;
+
+      const { data: oldSecData } = await supabase
+        .from("securities")
+        .select("security_type_id")
+        .eq("id", oldTrade.repo_security_id)
+        .single();
+
+      const securityTypeId = oldSecData?.security_type_id || securityTypes[0]?.id;
+
+      // Create new security
+      const newSecurityId = crypto.randomUUID();
+      const { error: secError } = await supabase.from("securities").insert({
+        id: newSecurityId,
+        org_id: orgId,
+        security_type_id: securityTypeId,
+        symbol: newSymbol,
+        name: securityName,
+        maturity_date: newMaturityDate
+      });
+      if (secError) throw new Error(`Failed to create security: ${secError.message}`);
+
+      // Create new repo trade
+      const newTradeId = crypto.randomUUID();
+      const { error: tradeError } = await supabase.from("repo_trades").insert({
+        id: newTradeId,
+        org_id: orgId,
+        repo_security_id: newSecurityId,
+        counterparty_id: newCounterpartyId,
+        issue_date: newIssueDate,
+        maturity_date: newMaturityDate,
+        rate: rate,
+        day_count_basis: dayCount,
+        status: "PENDING_APPROVAL",
+        notes: `Rolled over from ${oldTrade.securities?.symbol || "previous trade"}`,
+        created_by: userId
+      });
+      if (tradeError) throw new Error(`Failed to create trade: ${tradeError.message}`);
+
+      // Create allocations and replicate collateral automatically
+      for (const alloc of includedAllocations) {
+        const newAllocationId = crypto.randomUUID();
+
+        const { error: allocError } = await supabase.from("repo_allocations").insert({
+          id: newAllocationId,
+          org_id: orgId,
+          repo_trade_id: newTradeId,
+          portfolio_id: alloc.portfolioId,
+          principal: alloc.rolloverAmount,
+          reinvest_interest: alloc.interestAction === "reinvest",
+          capital_adjustment: alloc.principalAdjustment,
+          status: "DRAFT"
+        });
+        if (allocError) throw new Error(`Failed to create allocation: ${allocError.message}`);
+
+        // Get old allocation ID for this portfolio
+        const oldAlloc = oldTrade.repo_allocations.find(a => a.portfolio_id === alloc.portfolioId);
+        if (oldAlloc) {
+          // Copy collateral from old allocation to new allocation
+          const { data: oldCollateral } = await supabase
+            .from("collateral_positions")
+            .select("*")
+            .eq("repo_allocation_id", oldAlloc.id)
+            .in("status", ["RECEIVED", "ACTIVE"]);
+
+          if (oldCollateral && oldCollateral.length > 0) {
+            for (const cp of oldCollateral) {
+              await supabase.from("collateral_positions").insert({
+                org_id: orgId,
+                repo_allocation_id: newAllocationId,
+                portfolio_id: alloc.portfolioId,
+                collateral_security_id: cp.collateral_security_id,
+                face_value: cp.face_value,
+                dirty_price: cp.dirty_price,
+                market_value: cp.market_value,
+                haircut_pct: cp.haircut_pct,
+                valuation_date: new Date().toISOString().split("T")[0],
+                status: "RECEIVED",
+                restricted_flag: true,
+                external_custodian_ref: cp.external_custodian_ref
+              });
+            }
+          }
+        }
+      }
+
+      // Mark old trade as rolled
+      await supabase.from("repo_trades").update({ status: "ROLLED" }).eq("id", oldTrade.id);
+      await supabase.from("repo_allocations").update({ status: "ROLLED" }).eq("repo_trade_id", oldTrade.id);
+
+      setSuccessMessage(`New repo with symbol ${newSymbol} created and is available for approval. Old trade marked as rolled.`);
+      cancelAction();
+      await loadData(orgId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rollover failed");
+    } finally {
+      setProcessing(false);
+    }
   };
+
+  // Get selected trade
+  const selectedTrade = useMemo(() => repoTrades.find(t => t.id === selectedTradeId), [selectedTradeId, repoTrades]);
 
   if (loading) {
     return (
-      <main>
-        <section>
-          <h2>Loading...</h2>
-          <p>Preparing rollover workspace.</p>
+      <main className="maturity-page">
+        <section className="loading-section">
+          <div className="loading-spinner"></div>
+          <p>Loading maturity data...</p>
         </section>
       </main>
     );
   }
 
-  if (error === "Please sign in to access rollovers.") {
+  if (error && repoTrades.length === 0) {
     return (
-      <main>
-        <section>
-          <h2>Please sign in</h2>
-          <p>Authentication is required to run rollovers.</p>
-        </section>
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main>
-        <section>
-          <h2>Error</h2>
+      <main className="maturity-page">
+        <header className="page-header">
+          <div className="badge">Maturity Processing</div>
+          <h1>Maturity Processing</h1>
+        </header>
+        <section className="error-section">
           <p>{error}</p>
-          <a href="/" className="back-link">
-            ← Back to Entry
-          </a>
+          <button className="primary" onClick={() => { setError(null); if (orgId) loadData(orgId); }}>Retry</button>
         </section>
       </main>
     );
   }
 
   return (
-    <main>
+    <main className="maturity-page">
       <header className="page-header">
         <div>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <div className="badge">Rollover Console</div>
-            <div className={`badge ${hasExecuteRole ? "badge-bo" : ""}`}>
-              {hasExecuteRole ? "BO/OPS Execution" : "View Only"}
-            </div>
-          </div>
-          <h1>Mass & Single Rollovers</h1>
-          <p>Prepare, validate, and execute rollover batches.</p>
+          <div className="badge">Maturity Processing</div>
+          <h1>Maturity Processing</h1>
+          <p>Close or rollover maturing repos</p>
         </div>
-        <button
-          className="primary"
-          onClick={handleExecuteBatch}
-          disabled={!batchId || !hasExecuteRole || batchStatus !== "APPROVED"}
-        >
-          Execute Batch
-        </button>
       </header>
 
-      {!hasExecuteRole && (
-        <section className="info-banner">
-          <p>👁️ Execution is restricted to BO_OPERATIONS or OPS_SUPERVISOR roles.</p>
-        </section>
+      {successMessage && (
+        <div className="success-banner">
+          <p>✅ {successMessage}</p>
+          <button className="ghost" onClick={() => setSuccessMessage(null)}>Dismiss</button>
+        </div>
       )}
 
-      <section>
-        <h2>Batch Setup</h2>
-        <div className="section-grid">
-          {orgOptions.length > 1 && (
-            <div>
-              <label>Organization</label>
-              <select value={orgId} onChange={(event) => setOrgId(event.target.value)}>
-                {orgOptions.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div>
-            <label>Mode</label>
-            <select value={mode} onChange={(event) => setMode(event.target.value as Mode)}>
-              <option value="MASS">Mass</option>
-              <option value="SINGLE">Single</option>
-            </select>
-          </div>
-          <div>
-            <label>Rollover Date</label>
-            <input
-              type="date"
-              value={rolloverDate}
-              onChange={(event) => setRolloverDate(event.target.value)}
-            />
-          </div>
+      {error && (
+        <div className="error-banner">
+          <p>❌ {error}</p>
+          <button className="ghost" onClick={() => setError(null)}>Dismiss</button>
         </div>
-      </section>
-
-      {batchId && (
-        <section>
-          <h2>Batch Summary</h2>
-          <div className="summary-card">
-            <div className="summary-item">
-              <label>Status</label>
-              <div>{batchStatus || "DRAFT"}</div>
-            </div>
-            <div className="summary-item">
-              <label>Items</label>
-              <div>{batchItems.length}</div>
-            </div>
-            <div className="summary-item">
-              <label>Success</label>
-              <div>{batchCounts.SUCCESS ?? 0}</div>
-            </div>
-            <div className="summary-item">
-              <label>Failed</label>
-              <div>{batchCounts.FAILED ?? 0}</div>
-            </div>
-            <div className="summary-item">
-              <label>Skipped</label>
-              <div>{batchCounts.SKIPPED ?? 0}</div>
-            </div>
-          </div>
-          <div className="actions" style={{ marginTop: "16px" }}>
-            <button
-              className="secondary"
-              onClick={handleSubmitBatch}
-              disabled={!batchId || batchStatus !== "DRAFT"}
-            >
-              Submit for Approval
-            </button>
-            <button
-              className="primary"
-              onClick={handleApproveBatch}
-              disabled={!batchId || !hasExecuteRole || batchStatus !== "SUBMITTED"}
-            >
-              Approve Batch
-            </button>
-          </div>
-        </section>
       )}
 
-      <section className="allocations">
-        <h2>Portfolio Selection</h2>
-        {mode === "MASS" && portfolioGroups.length > 0 && (
-          <div className="section-grid">
-            <div>
-              <label>Portfolio Group</label>
-              <select
-                value={groupId}
-                onChange={(event) => setGroupId(event.target.value)}
-              >
-                <option value="">Select group (optional)</option>
-                {portfolioGroups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-        <div className="row-grid">
-          {portfolios.map((portfolio) => (
-            <label key={portfolio.id} style={{ textTransform: "none" }}>
-              <input
-                type="checkbox"
-                checked={portfolioIds.includes(portfolio.id)}
-                onChange={() => togglePortfolio(portfolio.id)}
-                disabled={Boolean(groupId)}
-                style={{ marginRight: "8px" }}
-              />
-              {portfolio.name}
-            </label>
-          ))}
+      {repoTrades.length === 0 ? (
+        <div className="empty-state">
+          <p>No approved repos maturing today or in the future.</p>
         </div>
-        {portfolioIds.length > 0 && (
-          <p className="footer-note">Selected: {selectedPortfolioNames.join(", ")}</p>
-        )}
-        {mode === "SINGLE" && (
-          <div className="section-grid" style={{ marginTop: "16px" }}>
-            <div>
-              <label>Old Repo Series</label>
-              <select
-                value={oldRepoTradeId}
-                onChange={(event) => setOldRepoTradeId(event.target.value)}
-                disabled={!rolloverDate || portfolioIds.length !== 1}
-              >
-                <option value="">Select repo series</option>
-                {oldRepoTrades.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {rolloverDate && portfolioIds.length === 1 && oldRepoTrades.length === 0 && (
-                <p className="footer-note">No eligible repo series for this portfolio/date.</p>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
+      ) : (
+        <div className="maturity-trades-list">
+          {repoTrades.map(trade => {
+            const summary = calculateTradeSummary(trade);
+            const isSelected = selectedTradeId === trade.id;
+            const isToday = trade.maturity_date === new Date().toISOString().split("T")[0];
+            const isTomorrow = trade.maturity_date === addDays(new Date().toISOString().split("T")[0], 1);
 
-      <section>
-        <h2>Overrides</h2>
-        <div className="section-grid">
-          <div>
-            <label>New Rate (%)</label>
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              value={newRate}
-              onChange={(event) => setNewRate(event.target.value)}
-            />
-          </div>
-          <div>
-            <label>New Maturity Date</label>
-            <input
-              type="date"
-              value={newMaturityDate}
-              onChange={(event) => setNewMaturityDate(event.target.value)}
-            />
-          </div>
-          <div>
-            <label>New Counterparty</label>
-            <select
-              value={newCounterpartyId}
-              onChange={(event) => setNewCounterpartyId(event.target.value)}
-            >
-              <option value="">Keep existing</option>
-              {counterparties.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label>New Security Type</label>
-            <select
-              value={newSecurityTypeId}
-              onChange={(event) => setNewSecurityTypeId(event.target.value)}
-            >
-              <option value="">Keep existing</option>
-              {securityTypes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label>Collateral Mode</label>
-            <select
-              value={collateralMode}
-              onChange={(event) => setCollateralMode(event.target.value)}
-            >
-              <option value="REUSE">Reuse</option>
-              <option value="REPLACE">Replace</option>
-              <option value="PENDING">Pending</option>
-            </select>
-          </div>
-          <div>
-            <label>Amount Override (LKR)</label>
-            <input
-              type="number"
-              min={0}
-              step={1000}
-              value={amountOverride}
-              onChange={(event) => setAmountOverride(event.target.value)}
-            />
-          </div>
-        </div>
-        <div className="actions">
-          <button className="secondary" onClick={handleCreateBatch}>
-            Create Batch
-          </button>
-          <button className="primary" onClick={handleBuildItems} disabled={!batchId}>
-            Build Items
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <h2>Preview Totals</h2>
-        {batchItems.length === 0 ? (
-          <p>Build batch items to preview totals.</p>
-        ) : (
-          <div className="summary-card">
-            <div className="summary-item">
-              <label>Total Principal</label>
-              <div>LKR {totals.principal.toLocaleString()}</div>
-            </div>
-            <div className="summary-item">
-              <label>Total Interest</label>
-              <div>LKR {totals.interest.toLocaleString()}</div>
-            </div>
-            <div className="summary-item">
-              <label>Maturity Proceeds</label>
-              <div>LKR {totals.maturity.toLocaleString()}</div>
-            </div>
-            <div className="summary-item">
-              <label>New Invest</label>
-              <div>LKR {totals.newInvest.toLocaleString()}</div>
-            </div>
-            <div className="summary-item">
-              <label>Capital Adjustment</label>
-              <div>LKR {totals.capital.toLocaleString()}</div>
-            </div>
-            <div className="summary-item">
-              <label>Net Cash Delta</label>
-              <div>
-                LKR {(totals.newInvest - totals.maturity).toLocaleString()}
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2>Holiday Calendar</h2>
-        <div className="section-grid">
-          <div>
-            <label>Day Count Method</label>
-            <select
-              value={configSettings?.day_count_method ?? "ACT/365"}
-              onChange={(event) =>
-                handleToggleHolidayConfig({ day_count_method: event.target.value })
-              }
-            >
-              <option value="ACT/365">ACT/365</option>
-              <option value="ACT/360">ACT/360</option>
-              <option value="30/360">30/360</option>
-            </select>
-          </div>
-          <div>
-            <label>Include Maturity</label>
-            <select
-              value={configSettings?.include_maturity ? "yes" : "no"}
-              onChange={(event) =>
-                handleToggleHolidayConfig({ include_maturity: event.target.value === "yes" })
-              }
-            >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </div>
-          <div>
-            <label>Use Holiday Calendar</label>
-            <select
-              value={configSettings?.use_holiday_calendar ? "yes" : "no"}
-              onChange={(event) =>
-                handleToggleHolidayConfig({ use_holiday_calendar: event.target.value === "yes" })
-              }
-            >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </div>
-          <div>
-            <label>Holiday Roll</label>
-            <select
-              value={configSettings?.holiday_roll ?? "FOLLOWING"}
-              onChange={(event) =>
-                handleToggleHolidayConfig({ holiday_roll: event.target.value })
-              }
-            >
-              <option value="FOLLOWING">Following</option>
-              <option value="PRECEDING">Preceding</option>
-            </select>
-          </div>
-        </div>
-        <div className="section-grid" style={{ marginTop: "16px" }}>
-          <div>
-            <label>Holiday Date</label>
-            <input
-              type="date"
-              value={holidayDate}
-              onChange={(event) => setHolidayDate(event.target.value)}
-            />
-          </div>
-          <div>
-            <label>Description</label>
-            <input
-              value={holidayDescription}
-              onChange={(event) => setHolidayDescription(event.target.value)}
-              placeholder="Optional note"
-            />
-          </div>
-          <div style={{ alignSelf: "end" }}>
-            <button className="secondary" onClick={handleAddHoliday}>
-              Add Holiday
-            </button>
-          </div>
-        </div>
-        {holidays.length === 0 ? (
-          <p className="footer-note">No holidays configured yet.</p>
-        ) : (
-          <div className="allocations">
-            {holidays.map((holiday) => (
-              <div key={holiday.id} className="allocation-row">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                  <div>
-                    <strong>{holiday.holiday_date}</strong>
-                    {holiday.description && <p>{holiday.description}</p>}
-                  </div>
-                  <button className="ghost" onClick={() => handleRemoveHoliday(holiday.id)}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {batchId && (
-        <section>
-          <h2>Batch Items</h2>
-          {batchItems.length === 0 ? (
-            <p>No items loaded yet.</p>
-          ) : (
-            <div className="allocations">
-              {batchItems.map((item) => (
-                <div key={item.id} className="allocation-row">
-                  <div>
-                    <strong>{item.portfolio?.name ?? "Portfolio"}</strong>
-                  </div>
-                  <p>Status: {item.status}</p>
-                  <p>New Invest Amount: LKR {item.new_invest_amount.toLocaleString()}</p>
-                  {item.collateral_mode !== "REUSE" && (
-                    <p>Collateral Mode: {item.collateral_mode}</p>
-                  )}
-                  {item.collateral_status && item.collateral_mode !== "REUSE" && (
-                    <p>Collateral Status: {item.collateral_status}</p>
-                  )}
-                  {item.error_message && <p>Note: {item.error_message}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {batchItems.length > 0 && (
-        <section>
-          <h2>Collateral Actions</h2>
-          {batchItems.filter((item) => item.collateral_mode !== "REUSE").length === 0 ? (
-            <p>No collateral actions required for this batch.</p>
-          ) : (
-            <div className="allocations">
-              {batchItems
-                .filter((item) => item.collateral_mode !== "REUSE")
-                .map((item) => (
-                  <div key={item.id} className="allocation-row">
-                  <div>
-                    <strong>{item.portfolio?.name ?? "Portfolio"}</strong>
-                  </div>
-                  <p>Collateral Mode: {item.collateral_mode}</p>
-                  {item.collateral_status && <p>Status: {item.collateral_status}</p>}
-                  {item.error_message && <p>Note: {item.error_message}</p>}
-                    {item.new_repo_allocation_id ? (
-                      <div className="actions">
-                        <a
-                          className="secondary"
-                          href={`/collateral?allocation_id=${item.new_repo_allocation_id}`}
-                        >
-                          Add Collateral
-                        </a>
-                      </div>
-                    ) : (
-                      <p className="footer-note">New allocation not available yet.</p>
-                    )}
-                  </div>
-                ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {batchItems.length > 0 && (
-        <section>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-            <h2>Batch Results Report</h2>
-            <button className="secondary" onClick={handleExportCsv}>
-              Export CSV
-            </button>
-          </div>
-          <div className="summary-card" style={{ marginTop: "12px" }}>
-            <div className="summary-item">
-              <label>Closed Allocations</label>
-              <div>{rollup.closedCount}</div>
-            </div>
-            <div className="summary-item">
-              <label>Opened Allocations</label>
-              <div>{rollup.openedCount}</div>
-            </div>
-            <div className="summary-item">
-              <label>Interest Withdrawn</label>
-              <div>LKR {rollup.interestWithdrawn.toLocaleString()}</div>
-            </div>
-            <div className="summary-item">
-              <label>Net Cash Delta</label>
-              <div>LKR {(rollup.newInvest - rollup.maturity).toLocaleString()}</div>
-            </div>
-          </div>
-          <div className="allocations">
-            {portfolioReport.map(([name, data]) => (
-              <div key={name} className="allocation-row">
-                <div>
-                  <strong>{name}</strong>
-                </div>
-                <div className="row-grid" style={{ marginTop: "12px" }}>
-                  <div>
-                    <label>Principal</label>
-                    <div>LKR {data.principal.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <label>Interest</label>
-                    <div>LKR {data.interest.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <label>Maturity Proceeds</label>
-                    <div>LKR {data.maturity.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <label>New Invest</label>
-                    <div>LKR {data.newInvest.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <label>Capital Adj.</label>
-                    <div>LKR {data.capital.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <label>Net Cash Delta</label>
-                    <div>
-                      LKR {(data.newInvest - data.maturity).toLocaleString()}
+            return (
+              <div key={trade.id} className={`maturity-trade-block ${isSelected ? "expanded" : ""}`}>
+                {/* Horizontal Card - Old Trade */}
+                <div className={`maturity-card-horizontal ${isToday ? "today" : ""} ${isTomorrow ? "tomorrow" : ""}`}>
+                  <div className="card-section symbol-section">
+                    <div className="symbol">{trade.securities?.symbol || "N/A"}</div>
+                    <div className={`maturity-badge ${summary.daysToMaturity <= 1 ? "urgent" : ""}`}>
+                      {summary.daysToMaturity === 0 ? "Today" : summary.daysToMaturity === 1 ? "Tomorrow" : `${summary.daysToMaturity}d`}
                     </div>
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
-      {successMessage && (
-        <section>
-          <h2>Update</h2>
-          <p>{successMessage}</p>
-        </section>
+                  <div className="card-section">
+                    <span className="label">Counterparty</span>
+                    <span className="value">{trade.counterparties?.name || "Unknown"}</span>
+                  </div>
+
+                  <div className="card-section">
+                    <span className="label">Principal</span>
+                    <span className="value">LKR {formatCurrency(summary.totalPrincipal)}</span>
+                  </div>
+
+                  <div className="card-section">
+                    <span className="label">Rate</span>
+                    <span className="value">{(trade.rate * 100).toFixed(2)}%</span>
+                  </div>
+
+                  <div className="card-section">
+                    <span className="label">Tenor</span>
+                    <span className="value">{summary.tenor}d</span>
+                  </div>
+
+                  <div className="card-section">
+                    <span className="label">Interest</span>
+                    <span className="value">LKR {formatInterest(summary.totalInterest)}</span>
+                  </div>
+
+                  <div className="card-section highlight">
+                    <span className="label">Maturity Value</span>
+                    <span className="value">LKR {formatInterest(summary.totalMaturityValue)}</span>
+                  </div>
+
+                  <div className="card-section dates-section">
+                    <span className="dates">{formatDate(trade.issue_date)} → {formatDate(trade.maturity_date)}</span>
+                    <span className="clients">{trade.repo_allocations.length} client{trade.repo_allocations.length !== 1 ? "s" : ""}</span>
+                  </div>
+
+                  <div className="card-section actions-section">
+                    {!isSelected && (
+                      <>
+                        <button className="close-btn" onClick={() => startClose(trade)}>Close</button>
+                        <button className="rollover-btn" onClick={() => startRollover(trade)}>Rollover →</button>
+                      </>
+                    )}
+                    {isSelected && (
+                      <button className="cancel-btn" onClick={cancelAction}>Cancel</button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Close Confirmation */}
+                {isSelected && actionMode === "close" && (
+                  <div className="action-panel close-panel">
+                    <div className="panel-header">
+                      <h3>⚠️ Close Trade</h3>
+                      <p>This will mark the trade as closed and return all collateral.</p>
+                    </div>
+                    <div className="panel-actions">
+                      <button className="secondary" onClick={cancelAction} disabled={processing}>Cancel</button>
+                      <button className="danger" onClick={executeClose} disabled={processing}>
+                        {processing ? "Processing..." : "Confirm Close"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Rollover - New Repo Form */}
+                {isSelected && actionMode === "rollover" && (
+                  <div className="action-panel rollover-panel">
+                    <div className="new-repo-section">
+                      <header className="section-header">
+                        <div>
+                          <div className="badge">New Repo • Rollover</div>
+                          <h2>New Repo Details</h2>
+                        </div>
+                        <button 
+                          className="primary" 
+                          onClick={executeRollover} 
+                          disabled={processing || newRepoTotals.count === 0 || !newSymbol}
+                        >
+                          {processing ? "Processing..." : "Submit for Approval"}
+                        </button>
+                      </header>
+
+                      {/* Summary Card */}
+                      <div className="summary-card inline-summary">
+                        <div className="summary-item">
+                          <label>Total Principal</label>
+                          <div>LKR {formatInterest(newRepoTotals.totalRolloverAmount)}</div>
+                        </div>
+                        <div className="summary-item">
+                          <label>Tenor</label>
+                          <div>{newTenor} days</div>
+                        </div>
+                        <div className="summary-item">
+                          <label>Estimated Interest</label>
+                          <div>LKR {formatInterest(newRepoTotals.totalNewInterest)}</div>
+                        </div>
+                        <div className="summary-item highlight">
+                          <label>Maturity Value</label>
+                          <div>LKR {formatInterest(newRepoTotals.totalMaturityValue)}</div>
+                        </div>
+                        <div className="summary-item">
+                          <label>Day Count</label>
+                          <div>{newDayCount === "365" ? "ACT/365" : "ACT/360"}</div>
+                        </div>
+                      </div>
+
+                      {/* Form Grid - matching New Repo page */}
+                      <div className="section-grid">
+                        <div>
+                          <label>Counterparty</label>
+                          <select value={newCounterpartyId} onChange={(e) => setNewCounterpartyId(e.target.value)}>
+                            {counterparties.map(cp => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label>Issue Date</label>
+                          <input type="date" value={newIssueDate} className="disabled-input" disabled />
+                        </div>
+                        <div>
+                          <label>Maturity Date</label>
+                          <input type="date" value={newMaturityDate} className="disabled-input" disabled />
+                        </div>
+                        <div>
+                          <label>Rate (%)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            value={newRate} 
+                            onChange={(e) => setNewRate(e.target.value)}
+                            placeholder="Enter rate"
+                          />
+                        </div>
+                        <div>
+                          <label>Day Count Convention</label>
+                          <select value={newDayCount} onChange={(e) => setNewDayCount(e.target.value)}>
+                            <option value="365">ACT/365</option>
+                            <option value="360">ACT/360</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label>Tenor (days)</label>
+                          <input type="number" value={newTenor} onChange={(e) => setNewTenor(e.target.value)} />
+                        </div>
+                      </div>
+
+                      {/* Symbol */}
+                      <div className="symbol-section-form">
+                        <label>Symbol</label>
+                        <input 
+                          type="text" 
+                          value={newSymbol || "Fill fields above to generate"} 
+                          readOnly 
+                          className={`symbol-input ${newSymbol ? "generated" : "pending"}`}
+                        />
+                      </div>
+
+                      {/* Client Allocations */}
+                      <div className="allocations-section">
+                        <div className="allocations-header">
+                          <h3>Client Allocations</h3>
+                          {availableClients.length > 0 && (
+                            <div className="add-client-row">
+                              <select 
+                                id="add-client-select"
+                                defaultValue=""
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    addNewClient(e.target.value);
+                                    e.target.value = "";
+                                  }
+                                }}
+                              >
+                                <option value="">+ Add Client</option>
+                                {availableClients.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                        <table className="allocations-table">
+                          <thead>
+                            <tr>
+                              <th>Include</th>
+                              <th>Client</th>
+                              <th>Old Principal</th>
+                              <th>Principal +/-</th>
+                              <th>New Principal</th>
+                              <th>Old Interest</th>
+                              <th>Interest</th>
+                              <th>Rollover Amount</th>
+                              <th></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {newAllocations.map(alloc => (
+                              <tr key={alloc.id} className={!alloc.included ? "excluded" : ""}>
+                                <td>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={alloc.included} 
+                                    onChange={() => updateAllocation(alloc.id, { included: !alloc.included })} 
+                                  />
+                                </td>
+                                <td>
+                                  <div className="client-name">{alloc.portfolioName}</div>
+                                  <div className="client-code">{alloc.portfolioCode}</div>
+                                </td>
+                                <td className="number">
+                                  {alloc.oldPrincipal > 0 ? `LKR ${formatCurrency(alloc.oldPrincipal)}` : <span className="new-client-badge">New</span>}
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    value={alloc.principalAdjustment}
+                                    onChange={(e) => updateAllocation(alloc.id, { principalAdjustment: parseFloat(e.target.value) || 0 })}
+                                    disabled={!alloc.included}
+                                    className="principal-input"
+                                    step="1000"
+                                    placeholder={alloc.oldPrincipal === 0 ? "Enter amount" : "0"}
+                                  />
+                                </td>
+                                <td className="number">LKR {formatInterest(alloc.newPrincipal)}</td>
+                                <td className="number">
+                                  {alloc.oldInterest > 0 ? `LKR ${formatInterest(alloc.oldInterest)}` : "-"}
+                                </td>
+                                <td>
+                                  {alloc.oldInterest > 0 ? (
+                                    <select
+                                      value={alloc.interestAction}
+                                      onChange={(e) => updateAllocation(alloc.id, { interestAction: e.target.value as "reinvest" | "payout" })}
+                                      disabled={!alloc.included}
+                                      className="interest-select"
+                                    >
+                                      <option value="reinvest">Reinvest</option>
+                                      <option value="payout">Payout</option>
+                                    </select>
+                                  ) : "-"}
+                                </td>
+                                <td className="number highlight">LKR {formatInterest(alloc.rolloverAmount)}</td>
+                                <td>
+                                  <button 
+                                    className="remove-btn"
+                                    onClick={() => removeAllocation(alloc.id)}
+                                    title="Remove client"
+                                  >
+                                    ×
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {newRepoTotals.totalInterestPaidOut > 0 && (
+                        <div className="payout-notice">
+                          💰 Interest to be paid out: <strong>LKR {formatInterest(newRepoTotals.totalInterestPaidOut)}</strong>
+                        </div>
+                      )}
+
+                      {!newSymbol && (
+                        <div className="warning-notice">
+                          ⚠️ Symbol not generated. Please ensure all required fields are filled.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </main>
   );

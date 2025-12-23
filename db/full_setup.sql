@@ -1143,6 +1143,8 @@ language plpgsql stable as $$
 declare
   cp_code text;
   rate_pct text;
+  base_symbol text;
+  serial_num int;
 begin
   select short_code into cp_code
   from public.counterparties
@@ -1154,13 +1156,23 @@ begin
 
   rate_pct := trim(to_char(p_rate * 100, 'FM9990.00'));
 
-  return concat_ws(
+  -- Build the base symbol without serial number
+  base_symbol := concat_ws(
     '-',
     cp_code,
     to_char(p_issue_date, 'YYYYMMDD'),
     to_char(p_maturity_date, 'YYYYMMDD'),
     rate_pct
   );
+
+  -- Count existing securities with this base symbol pattern and add 1
+  select count(*) + 1 into serial_num
+  from public.securities
+  where symbol like base_symbol || '-%'
+     or symbol = base_symbol;
+
+  -- Return symbol with serial number (padded to 3 digits)
+  return base_symbol || '-' || lpad(serial_num::text, 3, '0');
 end;
 $$;
 
