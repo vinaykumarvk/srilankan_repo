@@ -338,21 +338,15 @@ export default function CollateralPricesPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className="badge">Valuation</div>
-          <h1>Collateral Prices</h1>
-          <p>Import and manage market prices for collateral revaluation.</p>
-        </div>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <button className="secondary" onClick={() => setShowBulkUpload(true)} disabled={showBulkUpload}>
-            Bulk Upload
-          </button>
-          <button className="primary" onClick={() => setShowAddForm(true)} disabled={showAddForm}>
-            + Add Price
-          </button>
-        </div>
-      </header>
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: "12px", marginBottom: "24px", justifyContent: "flex-end" }}>
+        <button className="secondary" onClick={() => setShowBulkUpload(true)} disabled={showBulkUpload}>
+          Bulk Upload
+        </button>
+        <button className="primary" onClick={() => setShowAddForm(true)} disabled={showAddForm}>
+          + Add Price
+        </button>
+      </div>
 
       {error && (
         <section className="info-banner" style={{ backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>

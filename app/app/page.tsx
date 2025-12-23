@@ -666,15 +666,12 @@ export default function RepoEntryPage() {
   return (
     <main>
       <section className="repo-details-section">
-        <header className="section-header">
-          <div>
-            <div className="badge">Repo Placement • Draft</div>
-            <h2>Repo Details</h2>
-          </div>
+        {/* Action button */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
           <button className="primary" onClick={onSubmit} disabled={submitting}>
             {submitting ? "Submitting..." : "Submit for Approval"}
           </button>
-        </header>
+        </div>
 
         {/* Summary metrics at top */}
         <div className="summary-card inline-summary">

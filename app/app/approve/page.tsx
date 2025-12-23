@@ -686,16 +686,6 @@ export default function ApprovePage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className={`badge ${hasApproveRole ? "badge-bo" : ""}`}>
-            {hasApproveRole ? "BO Operations" : "View Only"} • {userEmail}
-          </div>
-          <h1>Repo Trade Approvals</h1>
-          <p>Review, approve, and post repo trades submitted by Front Office.</p>
-        </div>
-      </header>
-
       {!hasApproveRole && (
         <section className="info-banner">
           <p>👁️ You are viewing as <strong>{userRole}</strong>. Only BO_OPERATIONS or OPS_SUPERVISOR can approve trades.</p>

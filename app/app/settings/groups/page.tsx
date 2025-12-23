@@ -310,12 +310,8 @@ export default function PortfolioGroupsPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className="badge">Settings</div>
-          <h1>Portfolio Groups</h1>
-          <p>Create and manage portfolio groups for mass rollover operations.</p>
-        </div>
+      {/* Action button */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "24px" }}>
         <button
           className="primary"
           onClick={() => setShowNewGroupForm(true)}
@@ -323,7 +319,7 @@ export default function PortfolioGroupsPage() {
         >
           + New Group
         </button>
-      </header>
+      </div>
 
       {error && (
         <section className="info-banner" style={{ backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>

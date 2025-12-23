@@ -1132,14 +1132,6 @@ export default function CollateralPage() {
 
   return (
     <main>
-      <header className="page-header">
-          <div>
-          <div className="badge">Collateral Management</div>
-          <h1>Collateral Coverage & Monitoring</h1>
-          <p>Attach, substitute, and monitor collateral for repo trades.</p>
-                  </div>
-      </header>
-
       {error && (
         <section className="info-banner error-banner">
           <p>❌ {error}</p>

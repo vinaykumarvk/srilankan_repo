@@ -277,12 +277,8 @@ export default function CounterpartyLimitsPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className="badge">Risk Management</div>
-          <h1>Counterparty Limits</h1>
-          <p>Set and monitor exposure limits for counterparties.</p>
-        </div>
+      {/* Action button */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "24px" }}>
         <button
           className="primary"
           onClick={() => setShowAddForm(true)}
@@ -290,7 +286,7 @@ export default function CounterpartyLimitsPage() {
         >
           + Set New Limit
         </button>
-      </header>
+      </div>
 
       {error && (
         <section className="info-banner" style={{ backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>

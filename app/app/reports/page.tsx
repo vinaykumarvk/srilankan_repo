@@ -495,28 +495,20 @@ export default function ReportsPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <div className="badge">Reports & Analytics</div>
-            {exceptions.filter((e) => e.severity === "HIGH").length > 0 && (
-              <div
-                className="badge"
-                style={{ backgroundColor: "#ef4444", color: "white" }}
-              >
-                {exceptions.filter((e) => e.severity === "HIGH").length} Critical
-              </div>
-            )}
+      {/* Critical alerts indicator */}
+      {exceptions.filter((e) => e.severity === "HIGH").length > 0 && (
+        <div style={{ marginBottom: "16px" }}>
+          <div
+            className="badge"
+            style={{ backgroundColor: "#ef4444", color: "white" }}
+          >
+            {exceptions.filter((e) => e.severity === "HIGH").length} Critical Issues
           </div>
-          <h1>Operational Reports</h1>
-          <p>
-            Counterparty exposure, maturity calendar, and exception monitoring.
-          </p>
-          <div style={{ marginTop: "8px", color: "#666", fontSize: "12px" }}>
+          <span style={{ marginLeft: "12px", color: "#666", fontSize: "12px" }}>
             Coverage policy: {coveragePolicyLabel}
-          </div>
+          </span>
         </div>
-      </header>
+      )}
 
       {/* Tab Navigation */}
       <div className="report-tabs" style={{ display: "flex", gap: "8px", marginBottom: "24px" }}>

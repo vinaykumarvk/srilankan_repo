@@ -315,14 +315,6 @@ export default function AccrualsPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className="badge">Operations</div>
-          <h1>Daily Accruals</h1>
-          <p>Run and monitor daily interest accrual calculations for repo allocations.</p>
-        </div>
-      </header>
-
       {error && (
         <section className="info-banner" style={{ backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>
           <p style={{ color: "#b91c1c" }}>❌ {error}</p>

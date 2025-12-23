@@ -336,21 +336,15 @@ export default function LedgerPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <div className="badge">Accounting</div>
-          <h1>Ledger Entries</h1>
-          <p>View and manage accounting postings for repo transactions.</p>
-        </div>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <button className="secondary" onClick={exportToCSV}>
-            Export CSV
-          </button>
-          <button className="primary" onClick={() => setShowAddForm(true)} disabled={showAddForm}>
-            + New Entry
-          </button>
-        </div>
-      </header>
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: "12px", marginBottom: "24px", justifyContent: "flex-end" }}>
+        <button className="secondary" onClick={exportToCSV}>
+          Export CSV
+        </button>
+        <button className="primary" onClick={() => setShowAddForm(true)} disabled={showAddForm}>
+          + New Entry
+        </button>
+      </div>
 
       {error && (
         <section className="info-banner" style={{ backgroundColor: "#fee2e2", borderColor: "#ef4444" }}>
