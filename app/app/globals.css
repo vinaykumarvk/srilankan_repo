@@ -4597,44 +4597,48 @@ input[type="number"]::placeholder {
 .filters-section {
   background: #fff;
   border-radius: 14px;
-  padding: 16px 20px;
+  padding: 14px 16px;
   margin-bottom: 16px;
   box-shadow: 0 2px 8px rgba(12, 21, 32, 0.06);
 }
 
 .filters-row {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 
 .filters-row.secondary {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid rgba(12, 21, 32, 0.06);
 }
 
 .search-box {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 8px 12px;
   background: rgba(12, 21, 32, 0.03);
   border: 1px solid rgba(12, 21, 32, 0.08);
-  border-radius: 10px;
-  min-width: 260px;
+  border-radius: 8px;
+  min-width: 180px;
+  flex-shrink: 0;
 }
 
 .search-box svg {
   color: var(--muted);
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .search-box input {
   border: none;
   background: transparent;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   color: var(--ink);
   width: 100%;
 }
@@ -4648,13 +4652,16 @@ input[type="number"]::placeholder {
 }
 
 .filters-section select {
-  padding: 10px 14px;
-  font-size: 0.88rem;
+  padding: 8px 10px;
+  font-size: 0.82rem;
   border: 1px solid rgba(12, 21, 32, 0.12);
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fff;
   color: var(--ink);
   cursor: pointer;
+  flex-shrink: 0;
+  min-width: 110px;
+  max-width: 150px;
 }
 
 .filters-section select:focus {
@@ -4665,43 +4672,48 @@ input[type="number"]::placeholder {
 .date-range {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .date-range label {
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   color: var(--muted);
+  font-weight: 500;
 }
 
 .date-range input {
-  padding: 8px 12px;
-  font-size: 0.88rem;
+  padding: 6px 8px;
+  font-size: 0.8rem;
   border: 1px solid rgba(12, 21, 32, 0.12);
-  border-radius: 8px;
+  border-radius: 6px;
+  width: 120px;
 }
 
 .sort-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .sort-controls label {
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   color: var(--muted);
+  font-weight: 500;
 }
 
 .sort-order-btn {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(12, 21, 32, 0.05);
   border: 1px solid rgba(12, 21, 32, 0.1);
-  border-radius: 8px;
-  font-size: 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -4712,17 +4724,18 @@ input[type="number"]::placeholder {
 
 .view-toggle {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   background: rgba(12, 21, 32, 0.05);
-  padding: 4px;
-  border-radius: 8px;
+  padding: 3px;
+  border-radius: 6px;
+  flex-shrink: 0;
 }
 
 .view-toggle button {
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   cursor: pointer;
   color: var(--muted);
   transition: all 0.2s ease;
@@ -4735,14 +4748,16 @@ input[type="number"]::placeholder {
 }
 
 .clear-filters-btn {
-  padding: 10px 16px;
-  font-size: 0.85rem;
+  padding: 8px 12px;
+  font-size: 0.8rem;
   background: transparent;
   border: 1px dashed rgba(12, 21, 32, 0.2);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--muted);
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .clear-filters-btn:hover {
