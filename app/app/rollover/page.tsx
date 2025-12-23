@@ -304,6 +304,20 @@ export default function MaturityProcessingPage() {
     }));
   }, [newRate, newTenor, newDayCount, actionMode]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.actions-dropdown')) {
+        document.querySelectorAll('.dropdown-menu.show').forEach(el => {
+          el.classList.remove('show');
+        });
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   // Update allocation
   const updateAllocation = (id: string, updates: Partial<NewAllocation>) => {
     const rate = parseFloat(newRate) / 100;
@@ -552,10 +566,6 @@ export default function MaturityProcessingPage() {
   if (error && repoTrades.length === 0) {
     return (
       <main className="maturity-page">
-        <header className="page-header">
-          <div className="badge">Maturity Processing</div>
-          <h1>Maturity Processing</h1>
-        </header>
         <section className="error-section">
           <p>{error}</p>
           <button className="primary" onClick={() => { setError(null); if (orgId) loadData(orgId); }}>Retry</button>
@@ -566,14 +576,6 @@ export default function MaturityProcessingPage() {
 
   return (
     <main className="maturity-page">
-      <header className="page-header">
-        <div>
-          <div className="badge">Maturity Processing</div>
-          <h1>Maturity Processing</h1>
-          <p>Close or rollover maturing repos</p>
-        </div>
-      </header>
-
       {successMessage && (
         <div className="success-banner">
           <p>✅ {successMessage}</p>
@@ -604,58 +606,57 @@ export default function MaturityProcessingPage() {
               <div key={trade.id} className={`maturity-trade-block ${isSelected ? "expanded" : ""}`}>
                 {/* Horizontal Card - Old Trade */}
                 <div className={`maturity-card-horizontal ${isToday ? "today" : ""} ${isTomorrow ? "tomorrow" : ""}`}>
-                  <div className="card-section symbol-section">
-                    <div className="symbol">{trade.securities?.symbol || "N/A"}</div>
-                    <div className={`maturity-badge ${summary.daysToMaturity <= 1 ? "urgent" : ""}`}>
-                      {summary.daysToMaturity === 0 ? "Today" : summary.daysToMaturity === 1 ? "Tomorrow" : `${summary.daysToMaturity}d`}
+                  <div className="card-row-main">
+                    <div className="card-section symbol-section">
+                      <div className="symbol">{trade.securities?.symbol || "N/A"}</div>
+                      <div className={`maturity-badge ${summary.daysToMaturity <= 1 ? "urgent" : ""}`}>
+                        {summary.daysToMaturity === 0 ? "Today" : summary.daysToMaturity === 1 ? "Tomorrow" : `${summary.daysToMaturity}d`}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="card-section">
-                    <span className="label">Counterparty</span>
-                    <span className="value">{trade.counterparties?.name || "Unknown"}</span>
-                  </div>
+                    <div className="card-section">
+                      <span className="label">Counterparty</span>
+                      <span className="value">{trade.counterparties?.name || "Unknown"}</span>
+                    </div>
 
-                  <div className="card-section">
-                    <span className="label">Principal</span>
-                    <span className="value">LKR {formatCurrency(summary.totalPrincipal)}</span>
-                  </div>
+                    <div className="card-section">
+                      <span className="label">Principal</span>
+                      <span className="value">LKR {formatCurrency(summary.totalPrincipal)}</span>
+                    </div>
 
-                  <div className="card-section">
-                    <span className="label">Rate</span>
-                    <span className="value">{(trade.rate * 100).toFixed(2)}%</span>
-                  </div>
+                    <div className="card-section">
+                      <span className="label">Maturity</span>
+                      <span className="value highlight-value">LKR {formatInterest(summary.totalMaturityValue)}</span>
+                    </div>
 
-                  <div className="card-section">
-                    <span className="label">Tenor</span>
-                    <span className="value">{summary.tenor}d</span>
-                  </div>
+                    <div className="card-section compact">
+                      <span className="compact-info">{(trade.rate * 100).toFixed(2)}% • {summary.tenor}d</span>
+                      <span className="compact-info">{trade.repo_allocations.length} client{trade.repo_allocations.length !== 1 ? "s" : ""}</span>
+                    </div>
 
-                  <div className="card-section">
-                    <span className="label">Interest</span>
-                    <span className="value">LKR {formatInterest(summary.totalInterest)}</span>
-                  </div>
-
-                  <div className="card-section highlight">
-                    <span className="label">Maturity Value</span>
-                    <span className="value">LKR {formatInterest(summary.totalMaturityValue)}</span>
-                  </div>
-
-                  <div className="card-section dates-section">
-                    <span className="dates">{formatDate(trade.issue_date)} → {formatDate(trade.maturity_date)}</span>
-                    <span className="clients">{trade.repo_allocations.length} client{trade.repo_allocations.length !== 1 ? "s" : ""}</span>
-                  </div>
-
-                  <div className="card-section actions-section">
-                    {!isSelected && (
-                      <>
-                        <button className="close-btn" onClick={() => startClose(trade)}>Close</button>
-                        <button className="rollover-btn" onClick={() => startRollover(trade)}>Rollover →</button>
-                      </>
-                    )}
-                    {isSelected && (
-                      <button className="cancel-btn" onClick={cancelAction}>Cancel</button>
-                    )}
+                    <div className="card-section actions-section">
+                      {!isSelected ? (
+                        <div className="action-buttons-row">
+                          <button className="action-btn close-action" onClick={() => startClose(trade)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <circle cx="12" cy="12" r="10"/>
+                              <line x1="15" y1="9" x2="9" y2="15"/>
+                              <line x1="9" y1="9" x2="15" y2="15"/>
+                            </svg>
+                            Close
+                          </button>
+                          <button className="action-btn rollover-action" onClick={() => startRollover(trade)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <polyline points="23 4 23 10 17 10"/>
+                              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                            </svg>
+                            Rollover
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="cancel-btn" onClick={cancelAction}>✕</button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
